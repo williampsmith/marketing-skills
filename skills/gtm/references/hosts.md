@@ -17,8 +17,8 @@ skills directory, keeping the skills side by side. Then:
 - The host needs the product repo checked out (with push access for state commits and `gh` for
   PRs), a treg token (`treg` CLI signed in, or the token in the agent's environment), and `python3`.
 - Create the cron job with Hermes's scheduler, using the prompt above, daily. Cron jobs persist in the
-  agent's data directory (`/opt/data/cron/` in the hermes-fleet layout), and the jobs should be
-  reproducible from the fleet repo like the rest of the agent's config.
+  agent's data directory (e.g. `/opt/data/cron/` in the Docker image). If you manage agents
+  declaratively, keep the job definition in that config like the rest of the agent's setup.
 - Set `notify.channel: "gateway"` in gtm.json. The digest's "Needs you" goes to the agent's chat,
   and your replies ("approve 1, 3") are applied on the next tick.
 - Long skills (one-pager, outreach triage) can be split across the agent's subagents. Give each one

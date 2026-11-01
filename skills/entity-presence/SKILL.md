@@ -77,7 +77,7 @@ Record in `probe-<date>.md`:
 | finding | meaning |
 |---|---|
 | Trained knowledge: "I'm not aware of…" | not yet an entity in training data; profiles and mentions are the fix, payoff in the next model |
-| Trained knowledge describes something else with your name | **name collision**: disambiguate everywhere ("Obscript, the PDF redaction app") and on the site |
+| Trained knowledge describes something else with your name | **name collision**: disambiguate everywhere ("Acme, the PDF redaction app") and on the site |
 | Retrieval right, trained knowledge wrong or empty | fine for now; keep the profiles consistent so the next model learns it |
 | Retrieval wrong | a source the engine cites is wrong: fix that profile, or send it to `citation-outreach` as a correction |
 | Retrieval cites only your site | no third-party corroboration: profiles and reviews come first |
