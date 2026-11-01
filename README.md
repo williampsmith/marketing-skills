@@ -5,30 +5,31 @@ the code. The first track is **agent discoverability**: getting a product found,
 recommended by AI answer engines (ChatGPT, Perplexity, Google AI Overviews and AI Mode, Gemini,
 Claude, Copilot) and the agents built on them.
 
-## The loop
+## Start here: `gtm`
+
+`/marketing:gtm` is the single entry point. Run it once in a product repo (`init`), then let a
+daily scheduler call it (`tick`). It works on the product's current bottleneck, climbing a ladder:
 
 ```
-          ┌──────────────────────────┐
-          │  ai-visibility-audit      │  measure: named? cited? who instead? cited from where?
-          └────────────┬─────────────┘
-       gaps, targets,  │  fan-out intents
-         ┌─────────────┴──────────────┐
-         ▼                            ▼
-┌─────────────────────┐    ┌──────────────────────┐
-│ ai-search-          │    │ one-pager            │
-│ optimization        │    │                      │
-│ reachable, readable │    │ one intent, best     │
-│ citable: robots,    │    │ answer, claims from  │
-│ CDN, llms.txt,      │    │ the code, shipped    │
-│ schema, analytics   │    │ into the site        │
-└─────────┬───────────┘    └──────────┬───────────┘
-          └──────────────┬────────────┘
-                         ▼
-                re-audit (weekly, scheduled)
+reachable ─► known ─► associated ─► preferred ─► converting
+ bots can     models   named on       wins vs /    AI visits
+ read site    know it  category Qs    alt. Qs      → sign-ups
+   │            │          │              │
+ ai-search-   entity-   one-pager,    comparison-
+ optimization presence  citation-     pages
+                        outreach
+                 ▲
+     ai-visibility-audit measures every rung, weekly
 ```
+
+`gtm` decides what's due and affordable with a deterministic state engine (`gtm.py`: cadences,
+budget, ladder, events), runs at most two work actions per week through the other skills, keeps a
+plan of bets and learnings, and writes a digest whose first section is what needs a human.
+Pages ship as PRs and outreach as drafts. A human merges and sends.
 
 | skill | what it does | treg spend |
 |---|---|---|
+| `gtm` | Entry point and operator: init (incl. pre-launch), daily tick, launch, status; plan, ladder, budget, digest | ~$8-12/month at defaults |
 | `ai-visibility-audit` | Runs a fixed prompt panel across 5 engines, scores mention, citation, share of voice and gaps, diffs against the last run | ~$0.02 per prompt across all engines |
 | `ai-search-optimization` | Bot access (robots.txt + CDN), llms.txt, feeds, quick answers, JSON-LD, IndexNow, AI-referral tracking; verifies against production | ~free |
 | `one-pager` | Claims ledger from the code, intent mining, engine recon, evidence, draft, review gates, ship, track | ~$0.05-0.30 per page |
