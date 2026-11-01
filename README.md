@@ -8,18 +8,38 @@ Claude, Copilot) and the agents built on them.
 ## Start here: `gtm`
 
 `/marketing:gtm` is the single entry point. Run it once in a product repo (`init`), then let a
-daily scheduler call it (`tick`). It works on the product's current bottleneck, climbing a ladder:
+daily scheduler call it (`tick`).
 
+### The ladder: where the product is stuck
+
+AI visibility builds in stages, and each stage depends on the one before it. `gtm` finds the
+lowest stage not yet met and puts the work there. The audit measures every stage, weekly.
+
+```mermaid
+flowchart LR
+    R0["<b>0 · Reachable</b><br/>AI search bots can<br/>read the site<br/><i>ai-search-optimization</i>"]
+    R1["<b>1 · Known</b><br/>models describe the<br/>product correctly<br/><i>entity-presence</i>"]
+    R2["<b>2 · Associated</b><br/>named on category and<br/>problem questions<br/><i>one-pager, citation-outreach</i>"]
+    R3["<b>3 · Preferred</b><br/>wins comparison and<br/>alternatives questions<br/><i>comparison-pages</i>"]
+    R4["<b>4 · Converting</b><br/>AI-referred visits<br/>become sign-ups<br/><i>AI-referral tracking</i>"]
+    R0 --> R1 --> R2 --> R3 --> R4
 ```
-reachable ─► known ─► associated ─► preferred ─► converting
- bots can     models   named on       wins vs /    AI visits
- read site    know it  category Qs    alt. Qs      → sign-ups
-   │            │          │              │
- ai-search-   entity-   one-pager,    comparison-
- optimization presence  citation-     pages
-                        outreach
-                 ▲
-     ai-visibility-audit measures every rung, weekly
+
+Each box shows the stage, its test, and *the skill that moves it*.
+
+### What one scheduled run does
+
+```mermaid
+flowchart TD
+    A["Daily scheduler<br/>(Hermes cron, /schedule, CI)"] --> B["gtm tick"]
+    B --> C["gtm.py decides:<br/>which jobs are due, what the<br/>budget allows, which stage is current"]
+    C --> D["Run due jobs<br/>audit · access check · page watch · outreach refresh"]
+    C --> E["Work session, at most weekly:<br/>up to 2 actions on the current stage"]
+    E --> F["Outputs<br/>PRs for pages and site changes<br/>drafts for outreach and profiles"]
+    D --> G["Digest<br/>committed to .marketing/digests<br/>'Needs you' list sent to chat or GitHub"]
+    F --> G
+    G --> H["Human merges PRs,<br/>sends drafts, approves proposals"]
+    H -.->|"next audit measures the effect"| D
 ```
 
 `gtm` decides what's due and affordable with a deterministic state engine (`gtm.py`: cadences,
