@@ -63,24 +63,39 @@ facts.
 
 ## Install
 
+### Prerequisites
+
+- **[treg](https://treg.to)**: the skills get their live data (AI engine answers, search results,
+  keywords, forums, page reads) through it. Install the CLI and sign in:
+  `curl -fsSL https://treg.to/install.sh | sh`, then follow https://treg.to/llms.txt. Paid calls
+  draw on a prepaid team balance; a typical month at `gtm` defaults is about $8-12. Without treg,
+  the skills fall back to plain web search and skip measurement, and they say so.
+- **`python3`** (3.9 or newer). The scripts use only the standard library; nothing to `pip install`.
+- **`gh`**, signed in, if you want `gtm` to open PRs.
+
+### Claude Code
+
 ```
-/plugin marketplace add williampsmith/marketing-skills   # or a local path to this repo
+/plugin marketplace add williampsmith/marketing-skills
 /plugin install marketing@marketing-skills
 ```
 
-Skills are invoked as `/marketing:<skill>` (e.g. `/marketing:one-pager`), or picked up
-automatically from their descriptions.
+Skills are invoked as `/marketing:<skill>` (start with `/marketing:gtm`), or picked up
+automatically from their descriptions. Update later with `/plugin marketplace update marketing-skills`.
 
-**Other agents (Hermes, Codex, Cursor, …).** The skills are plain `SKILL.md` folders with
-stdlib-Python scripts, so they work in any agent that reads Agent Skills. Copy or symlink the
-whole `skills/` directory (keep the folders side by side: a few skills call a sibling's script
-through `../<skill>/scripts/`) into that agent's skills directory. Scheduling belongs to the host
-agent's own scheduler (Hermes cron, Claude Code `/schedule`, CI).
+### Other agents (Hermes, Codex, Cursor, …)
 
-**Prerequisite: treg.** The skills get live data (AI engine answers, SERP, keywords, forums, page
-reads) through [treg](https://treg.to): either the MCP server or the `treg` CLI signed into a team
-with balance. The audit's batch runner uses the CLI. Without treg, the skills fall back to plain
-web search and skip measurement, and they say so.
+The skills are plain Agent Skills folders (`SKILL.md` plus scripts), so any agent that reads them
+can use them. Clone the repo and link the skills into the agent's skills directory, keeping them
+side by side (a few skills call a sibling's script through `../<skill>/scripts/`):
+
+```bash
+git clone https://github.com/williampsmith/marketing-skills.git
+ln -s "$PWD"/marketing-skills/skills/* ~/.hermes/skills/    # or that agent's skills directory
+```
+
+A `git pull` in the clone updates them. Scheduling uses the agent's own scheduler; see
+`skills/gtm/references/hosts.md`.
 
 ## Why built this way
 
@@ -101,3 +116,7 @@ python3 -m unittest discover tests        # script tests (stdlib only)
 ```
 
 See `CLAUDE.md` for conventions and `docs/skill-ideas.md` for the backlog.
+
+## License
+
+MIT. See `LICENSE`.

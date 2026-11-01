@@ -25,14 +25,14 @@ roadmaps, decks and old strategy docs are not.
 ## OK to claim
 | claim (as it may appear in copy) | evidence | notes / required qualifier |
 |---|---|---|
-| Runs entirely on the device; documents are not uploaded | python/server.py binds 127.0.0.1 only; no outbound calls in export path | except license check (no document data) |
-| Verifies every export with two independent parsers and refuses to save on failure | verify_export() in pdf_redactor.py; tests/test_export_self_check.py | covers boxed areas only |
+| Files are processed on your device and never uploaded | src/server.ts binds to localhost only; no network calls in src/export/ | except the license check, which sends no file data |
+| Checks every export and refuses to save one that fails | checkExport() in src/export/verify.ts; test/export-verify.test.ts | covers only the areas the user marked |
 
 ## Never claim (not shipped / not true)
 | claim | why |
 |---|---|
-| Automatic PII detection | not in the shipping code path |
-| "100% unrecoverable" | no independent audit; OCR find is best-effort |
+| Automatic detection of personal data | only on a feature branch, not shipped |
+| "100% secure" | no independent audit |
 
 ## Caveats every page must respect
 - …

@@ -131,7 +131,7 @@ class GtmTest(unittest.TestCase):
     def test_known_issue_blocks_known_and_access_blocks_reachable(self):
         run("init")
         s = json.loads(Path(".marketing/gtm.json").read_text())
-        s["known_issues"] = ["name collision with OBScript"]
+        s["known_issues"] = ["name collision with another product"]
         Path(".marketing/gtm.json").write_text(json.dumps(s))
         self.write_run("2026-10-01", score({"brand": b(5, 1.0)}))
         Path(".marketing/access").mkdir(parents=True)
