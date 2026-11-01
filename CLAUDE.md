@@ -16,6 +16,10 @@ coding agents. It is also its own marketplace (`.claude-plugin/marketplace.json`
   All Python is **stdlib only** and runs with plain `python3`, since it executes inside other
   people's repos.
 - `tests/`: `python3 -m unittest discover tests`. Run after any script change.
+- CI (`.github/workflows/checks.yml`, PRs and pushes to main): compiles the scripts and runs the tests on
+  Python 3.9 and latest, checks that every JSON parses, runs `claude plugin validate` (pinned CLI
+  version), checks that each skill folder matches its frontmatter `name`, and checks that both
+  manifests carry the same version.
 
 ## Conventions
 - State a skill writes in a product repo goes under `.marketing/` (profile.md, claims.md,
