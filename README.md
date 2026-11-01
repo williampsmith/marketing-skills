@@ -97,6 +97,12 @@ ln -s "$PWD"/marketing-skills/skills/* ~/.hermes/skills/    # or that agent's sk
 A `git pull` in the clone updates them. Scheduling uses the agent's own scheduler; see
 `skills/gtm/references/hosts.md`.
 
+### Running it unattended on a server
+
+[`docs/remote-setup.md`](docs/remote-setup.md) is the playbook for both Claude Code (cloud routine or
+your own server) and Hermes Agent: credentials with least privilege, the supervised `init`, the
+daily heartbeat, the first week, and day-to-day operation.
+
 ## Why built this way
 
 - **Measure first.** Every change is judged against a fixed panel, so "it worked" is a diff, not a feeling.

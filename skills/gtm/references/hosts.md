@@ -4,7 +4,8 @@ One scheduler entry, daily, that runs `gtm tick` in the product repo. Everything
 weekly or quarterly jobs, events) is decided by `gtm.py tick` from `.marketing/gtm.json`. Never
 create one scheduler entry per job; then the schedule lives where the agent can't see or change it.
 
-Pick a quiet hour in the team's timezone. Use the same prompt everywhere:
+For the whole setup (credentials, branch protection, supervised init, first week), see
+`docs/remote-setup.md` in the plugin repo. Pick a quiet hour in the team's timezone. Use the same prompt everywhere:
 
 > Run the gtm skill in tick mode for the repo at <path>. Follow its "Every run" steps, respect its
 > autonomy gates, and notify per gtm.json.
