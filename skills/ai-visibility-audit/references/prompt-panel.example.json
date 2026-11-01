@@ -1,0 +1,50 @@
+{
+  "_engines_checked": "2026-10-31 — endpoint ids and prices change weekly; re-check with catalog_get before a run and edit here, not in the scripts",
+  "country": "US",
+  "samples": 1,
+  "brand": {
+    "name": "Acme Redact",
+    "aliases": ["AcmeRedact", "acmeredact.com"],
+    "domains": ["acmeredact.com"]
+  },
+  "competitors": [
+    {"name": "Adobe Acrobat", "aliases": ["Acrobat"], "domains": ["adobe.com"]},
+    {"name": "Redactable", "aliases": [], "domains": ["redactable.com"]}
+  ],
+  "engines": {
+    "chatgpt": {
+      "endpoint": "cloro.ai-search.chatgpt.scrape",
+      "body": {"prompt": "{prompt}", "country": "{country}", "include": {"markdown": true, "searchQueries": true}},
+      "usd_estimate": 0.0036
+    },
+    "perplexity": {
+      "endpoint": "treg.ai-search.perplexity.answer",
+      "body": {"prompt": "{prompt}", "country": "{country}"},
+      "headers": ["X-Treg-Route-Max-Cost: 0.02"],
+      "usd_estimate": 0.006
+    },
+    "google_ai_mode": {
+      "endpoint": "cloro.google.serp.ai_mode",
+      "body": {"prompt": "{prompt}", "gl": "{country}"},
+      "usd_estimate": 0.0024
+    },
+    "gemini": {
+      "endpoint": "cloro.ai-search.gemini.scrape",
+      "body": {"prompt": "{prompt}", "country": "{country}", "include": {"markdown": true}},
+      "usd_estimate": 0.0024
+    },
+    "claude": {
+      "endpoint": "dataforseo.x.ai-optimization-claude-llm-responses-live",
+      "body": [{"user_prompt": "{prompt}", "model_name": "claude-sonnet-4-5"}],
+      "usd_estimate": 0.0245,
+      "_note": "model API answer, 500-char prompt cap; check catalog_get for a current model_name and whether web search can be switched on"
+    }
+  },
+  "prompts": [
+    {"id": "cat-01", "bucket": "category", "text": "What's the safest way to redact a PDF so the hidden text can't be recovered?", "page": null},
+    {"id": "prob-01", "bucket": "problem", "text": "I blacked out names in a PDF but someone copy-pasted the text underneath. How do I stop that?", "page": null},
+    {"id": "cmp-01", "bucket": "comparison", "text": "Acrobat redaction vs a dedicated redaction app for legal documents — which should a small firm use?", "page": null},
+    {"id": "alt-01", "bucket": "alternatives", "text": "Alternatives to Adobe Acrobat for redacting PDFs offline on a Mac", "page": null},
+    {"id": "brand-01", "bucket": "brand", "text": "What is Acme Redact and is it trustworthy?", "page": null}
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "marketing-skills",
+  "owner": { "name": "William Smith" },
+  "plugins": [
+    {
+      "name": "marketing",
+      "source": "./",
+      "description": "Agent-discoverability skills: ai-visibility-audit, ai-search-optimization, one-pager, citation-outreach, entity-presence, comparison-pages.",
+      "version": "0.2.0"
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "_usage": "copy to .marketing/entity/probe-panel.json, fill brand/prompts, then: python3 <ai-visibility-audit>/scripts/run_panel.py --panel .marketing/entity/probe-panel.json --out .marketing/entity/probe-<date>  (engines checked 2026-11-01; verify with catalog_get)",
+  "country": "US",
+  "samples": 1,
+  "brand": {"name": "Acme Redact", "aliases": ["AcmeRedact"], "domains": ["acmeredact.com"]},
+  "competitors": [],
+  "engines": {
+    "chatgpt_trained": {
+      "_note": "disableWebSearch was NOT honored on 2026-11-01 (answer had sources); keep only if a smoke call returns zero sources",
+      "enabled": false,
+      "endpoint": "cloro.ai-search.chatgpt.scrape",
+      "body": {"prompt": "{prompt}", "country": "{country}", "disableWebSearch": true, "include": {"markdown": true}},
+      "usd_estimate": 0.0028
+    },
+    "claude_trained": {
+      "endpoint": "dataforseo.x.ai-optimization-claude-llm-responses-live",
+      "body": [{"user_prompt": "{prompt}", "model_name": "claude-sonnet-4-5"}],
+      "usd_estimate": 0.0245
+    },
+    "chatgpt_search": {
+      "endpoint": "cloro.ai-search.chatgpt.scrape",
+      "body": {"prompt": "{prompt}", "country": "{country}", "include": {"markdown": true}},
+      "usd_estimate": 0.0028
+    },
+    "perplexity": {
+      "endpoint": "treg.ai-search.perplexity.answer",
+      "body": {"prompt": "{prompt}", "country": "{country}"},
+      "headers": ["X-Treg-Route-Max-Cost: 0.02"],
+      "usd_estimate": 0.006
+    },
+    "google_ai_mode": {
+      "endpoint": "cloro.google.serp.ai_mode",
+      "body": {"prompt": "{prompt}", "gl": "{country}"},
+      "usd_estimate": 0.0024
+    }
+  },
+  "prompts": [
+    {"id": "ent-what", "bucket": "brand", "text": "What is Acme Redact?"},
+    {"id": "ent-who", "bucket": "brand", "text": "Who makes Acme Redact, and when was it launched?"},
+    {"id": "ent-safe", "bucket": "brand", "text": "Is Acme Redact safe and legitimate to use?"},
+    {"id": "ent-price", "bucket": "brand", "text": "How much does Acme Redact cost?"},
+    {"id": "ent-use", "bucket": "brand", "text": "What is Acme Redact used for, and who is it for?"},
+    {"id": "ent-vs", "bucket": "brand", "text": "What are the main alternatives to Acme Redact?"}
+  ]
+}
