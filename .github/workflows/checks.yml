@@ -1,0 +1,59 @@
+name: checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  scripts:
+    name: scripts (python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is the oldest python3 the skills promise to run on inside other people's repos
+        python: ["3.9", "3.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Compile scripts
+        run: python -m py_compile skills/*/scripts/*.py
+      - name: Unit tests
+        run: python -m unittest discover -v tests
+      - name: JSON references parse
+        run: |
+          for f in .claude-plugin/*.json skills/*/references/*.json; do
+            python -c "import json,sys; json.load(open(sys.argv[1]))" "$f" || { echo "invalid JSON: $f"; exit 1; }
+          done
+
+  plugin:
+    name: plugin manifest and skills
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate plugin
+        # pinned so a CLI release can't change the result of an unchanged commit; bump deliberately
+        run: npx -y @anthropic-ai/claude-code@2.1.316 plugin validate .
+      - name: Skill folders match their names
+        run: |
+          fail=0
+          for d in skills/*/; do
+            n=$(basename "$d")
+            grep -q "^name: $n$" "$d/SKILL.md" || { echo "::error file=$d/SKILL.md::frontmatter name is not '$n'"; fail=1; }
+            grep -q "^description: ." "$d/SKILL.md" || { echo "::error file=$d/SKILL.md::missing description"; fail=1; }
+          done
+          exit $fail
+      - name: Manifest versions agree
+        run: |
+          a=$(python3 -c "import json; print(json.load(open('.claude-plugin/plugin.json'))['version'])")
+          b=$(python3 -c "import json; print(json.load(open('.claude-plugin/marketplace.json'))['plugins'][0]['version'])")
+          [ "$a" = "$b" ] || { echo "::error::plugin.json $a != marketplace.json $b"; exit 1; }
