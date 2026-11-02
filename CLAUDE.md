@@ -24,7 +24,7 @@ coding agents. It is also its own marketplace (`.claude-plugin/marketplace.json`
 ## Conventions
 - State a skill writes in a product repo goes under `.marketing/` (profile.md, claims.md,
   prompt-panel.json, pages.md, pages/<slug>/, runs/<date>/, gtm.json, plan.md, spend.jsonl,
-  digests/, access/, watch/, outreach/, competitors/, entity.md). Keep those names stable across skills.
+  digests/, access/, watch/, outreach/, competitors/, entity.md, launches/). Keep those names stable across skills.
 - treg: skills describe jobs and give **dated example** endpoint ids, always with "verify with
   `catalog_get`". Never hard-code an id in prose without a date. Batch through the CLI and look
   things up through MCP. State the price before spending, rate calls that invite `review`, and

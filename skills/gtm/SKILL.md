@@ -116,13 +116,31 @@ work beats five half-done drafts.
 
 ## launch <feature>
 
-1. Read the PR or diff and confirm it's shipped (merged, released, or behind a flag that's on).
-2. Update `claims.md` with OK rows and evidence. A flagged-off feature is not shipped.
-3. If the feature answers an intent buyers ask about, add a one-pager to the backlog, or write it now
-   if a work session is due.
-4. Add 1-3 panel prompts for the job it does (new ids, bucket `jobs` or `problem`, `page` once it ships).
-5. Make sure `llms.txt` and the feed mention it if the site has them, via a PR.
-6. Record `launch_scan`.
+A shipped feature changes what's true about the product, so every asset that depends on those facts
+gets a look. `launch_scan` runs this daily for whatever merged or was tagged since the last scan.
+Run it by hand with `launch <PR, tag or feature>`.
+
+1. **Is it shipped and user-visible?** Read the PR or diff and confirm it's merged, released, or behind
+   a flag that's on. A flagged-off feature isn't shipped. Internal refactors, tests and infrastructure
+   changes are not launches; record the scan and stop.
+2. **Claims**: add or update OK rows in `claims.md` with the evidence. Remove rows the change made untrue.
+3. **Pages**: if the feature answers a question buyers ask, add a one-pager to the backlog (or write
+   it now if a work session is due). Update existing pages whose facts changed, via a PR.
+4. **Comparisons**: for each competitor dossier, check whether the feature changes a grid row (a
+   gap closed or a new advantage). Update the grid and the affected pages through
+   `comparison-pages`, via a PR.
+5. **Outreach**: in `.marketing/outreach/targets.json`, find targets whose triage notes say the
+   page lacks something this feature provides, or where a competitor was preferred for it. Mark
+   them for a fresh draft. A real new capability is the best reason to contact an editor again.
+6. **Entity and profiles**: if the one-liner, category or platforms changed, update `entity.md`
+   and prepare paste-ready profile updates (`entity-presence` step 4).
+7. **Feeds**: make sure `llms.txt`, the JSON feed and the sitemap mention the feature if the
+   site has them, via a PR.
+8. **Tracking**: add 1-3 panel prompts for the job the feature does (new ids, bucket `jobs` or
+   `problem`, `page` once the page ships), and a bet in `plan.md` with a check date.
+9. **Announcement draft**: a short changelog entry and one post (≤ 280 characters) built from the claims
+   rows, saved under `.marketing/launches/<date>-<slug>.md` for a human to publish.
+10. Record `launch_scan`, and list everything prepared under the digest's "Needs you".
 
 ## Autonomy gates
 
