@@ -32,11 +32,16 @@ the loop and `docs/design/growth-operator.md` for the design being implemented.
   comparison-pages, citation-outreach and entity-presence via `../competitive-intel/scripts/`).
   `skills/seo/scripts/crawl_check.py` (technical crawl), `skills/customer-research/scripts/attention.py`
   (attention weights from research evidence), `skills/outbound/scripts/send_batch.py` (sends only
-  approved batches, through gtm.py's `send_allowed`; SMTP from env only; tests replace
+  approved batches, through gtm.py's `send_capacity` and hashed approvals; SMTP from env only; tests replace
   `smtp_connect`), `skills/creative/scripts/review_page.py` (self-contained review page; refuses
   assets without a claim row or an AI disclosure), `skills/experiments/scripts/stats.py` (sample
   size, run length, two-proportion z-test, holdout arithmetic; `tests/test_experiments.py` checks
   it against textbook values and against gtm.py's own z-test).
+  `skills/lifecycle/` and `skills/paid/` are prose only: lifecycle sends through
+  `send_batch.py` (channel `lifecycle_email`), paid gates spend through `gtm.py spend check|log`.
+  Sending and spend authority (`authority`, `approve`, `outcome`, `spend`; levels draft,
+  approve_to_send, bounded; promotion criteria in `PROMOTION`) lives in gtm.py and is tested in
+  `tests/test_sending.py` and `tests/test_authority.py`.
   All Python is **stdlib only** and runs with plain `python3` (3.9+), since it executes inside
   other people's repos.
 - `tests/`: `python3 -m unittest discover tests`. Run after any script change. Tests that touch
@@ -57,7 +62,8 @@ the loop and `docs/design/growth-operator.md` for the design being implemented.
   `pages/<slug>/`, `runs/<date>/`, `metrics/<metric>.jsonl`, `experiments.jsonl`, `spend.jsonl`,
   `posthog-outbox.jsonl`, `plan.md`, `digests/`, `access/`, `watch/`, `watch.json`, `outreach/`,
   `competitors/`, `entity/`, `launches/`, `seo/`, `research/`, `outbound/accounts/`,
-  `sends/<batch>/`, `sends.jsonl`, `approvals.jsonl`, `suppression.csv`, `creative/<batch>/`, `social/`. Keep those names stable across skills. Scripts resolve the
+  `sends/<batch>/`, `sends.jsonl`, `approvals.jsonl`, `outcomes.jsonl`, `ad-spend.jsonl`,
+  `suppression.csv`, `lifecycle/<flow>/`, `paid/`, `creative/<batch>/`, `social/`. Keep those names stable across skills. Scripts resolve the
   directory through `marketing_state.state_root()`; skill prose writes `<state>/…`. The product repo
   only receives PRs.
 - treg: skills describe jobs and give **dated example** endpoint ids, always with "verify with
@@ -73,6 +79,8 @@ the loop and `docs/design/growth-operator.md` for the design being implemented.
   `every_days`, `usd`, `stages`, `skill`, `track`, `kind` (sensor, improvement, review), and the
   prose fields `acts_when`, `self_check`, `stop`; plus `requires`, `cooldown_days` with
   `dedupe_key`, and `max_actions` where they apply.
+- Authority only ever goes up by a human's explicit instruction. Code that sends or spends must ask
+  gtm.py first (`send_capacity`, `spend_allowed`) and fail closed.
 - Anything that sends, spends or publishes follows `skills/gtm/references/guardrails.md` and
   `compliance.md`. Personal data stays in the state store, never in PostHog properties or the repo.
 - Reference text is written from first principles; don't copy text from other skill libraries.

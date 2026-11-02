@@ -80,6 +80,8 @@ into which tactics get tried next. A result becomes a learning only after a huma
 | `cro` | Finds which page, step and source leaks before the first step; reviews the page; ships one change at a time as a flagged PR with a bet | free |
 | `activation` | Defines the activation event with the team; shortens signup and onboarding to the first value moment; upgrade moments tied to value; PRs behind flags | free |
 | `experiments` | Picks A/B, holdout, staggered or before/after from the traffic (`stats.py`), fixes the metric first, checks sample ratio, closes bets from real counts | free |
+| `lifecycle` | Onboarding, trial, dunning, a fair cancel flow, win-back, referrals and review requests, as templates, PRs or drafts for the email platform; judged against holdouts | free |
+| `paid` | Off until a human turns it on. Read-only audits (tracking, waste, structure, payback), competitor ad research, proposals; budget changes only under granted caps | free audits; ~$0.01 per competitor ad lookup |
 | `social` | Organic posts and community answers drafted from launches, pages and bets, for a human to post | free |
 
 ### Where the data lives
@@ -98,6 +100,20 @@ Metrics and experiment results go to **PostHog Cloud** next to the product's own
 Stripe by default (or RevenueCat, Paddle, Chargebee, Polar, or the product's own purchase events),
 always read through PostHog. Teams without PostHog get a monthly self-contained HTML scorecard from
 the state store (`measurement/scripts/report.py`) and can record the metrics by hand.
+
+### How much the agent may do
+
+Anything that sends or spends moves through three levels, per channel, and only a human moves a
+channel up (`gtm.py authority`):
+
+1. **Draft** (every channel starts here): the agent writes; a human sends, posts or changes spend.
+2. **Approve-to-send** (email channels): the agent sends exactly the batch a human approved, within
+   a daily cap, to no suppressed address and no one inside a cooldown.
+3. **Bounded**: the agent sends approved templates to approved segments without per-batch approval,
+   or changes ad spend inside a daily cap and a per-change limit. Email needs 30 days at
+   approve-to-send, 50 sends, a 2% reply rate and no complaints first; one complaint drops it back.
+
+`gtm.py pause` stops everything at once. Posts and community replies are always sent by a human.
 
 ## Install
 

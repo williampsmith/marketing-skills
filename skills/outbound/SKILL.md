@@ -131,6 +131,20 @@ What `send_batch.py` does:
   it sent.
 - Logs sends without addresses (`sends.jsonl`); keys are domains.
 
+### Bounded sending
+
+When `gtm.py authority show` reports `bounded_eligible: true` for the channel, say so in the digest
+with the numbers; never grant it yourself. Once a human grants it
+(`gtm.py authority grant outbound --level bounded --template <id> --segment <id> --quote "<their words>"`):
+
+- Templates and segments are the approved ones, by id. A template is a message with fixed claims and
+  structure (personalisation only in marked slots); a segment is an ICP slice written in plan.md.
+- Every draft line carries `"template"` and `"segment"`; `send_batch.py` skips any that don't match
+  the allowlist, and sends the rest without `gtm.py approve`, still inside the daily cap,
+  suppression and cooldowns.
+- After replies come in, record them: `gtm.py outcome outbound --replies N --complaints N`. One
+  complaint drops the channel back to approve-to-send.
+
 ## 5. Replies and stopping
 
 - Every reply goes to a human. The agent never answers a reply on its own. Add every address that

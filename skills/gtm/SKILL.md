@@ -62,7 +62,7 @@ repo or in PostHog event properties.
    (they run `/marketing:gtm`, or tell the Hermes agent in chat), apply it with their words:
    `gtm.py approve <id> --count 12 --quote "<their reply>"` or `gtm.py authority grant … --quote
    "<their words>"`. A creative approval ("approve creative <batch>: <ids>") → note the ids in
-   plan.md for the human who posts them. Unclear replies: ask, don't guess.
+   plan.md for the human who posts them. Never grant, raise or widen authority on your own. Unclear replies: ask, don't guess.
 4. Check tools: `python3`, `treg --version` and `treg balance`, `gh auth status` if PRs are expected.
    If treg is missing or empty, run only free jobs and alert.
 5. `gtm.py tick` → `focus`, `due`, `deferred`, `skipped`, `alerts`, `budget`, `tracks`. If it says
@@ -230,6 +230,9 @@ Full rules: `references/guardrails.md` and `references/compliance.md`.
 | spend treg balance | yes, within `budget --need` and the per-run cap |
 | site changes, pages, robots.txt, schema, tracking code | **PR only**: a human merges |
 | outreach, posts, profile edits, any message to a person | **draft only**. Email on a channel a human granted approve-to-send (`gtm.py authority grant <channel> --level approve_to_send --quote …`): only the drafts a human approved, pinned by content (`gtm.py approve <batch> --count N --quote …`, both applied only with the human present), through `../outbound/scripts/send_batch.py`, which re-checks the kill switch before every message, caps, suppression and cooldowns. Posts and community replies are never sent by the agent. |
+| email on a channel with **bounded** authority (`gtm.py authority show`) | only drafts carrying an approved `template` and `segment`, through `send_batch.py`, inside the daily cap; record replies and complaints with `gtm.py outcome`; any complaint demotes the channel |
+| ad budget or bid changes | **propose** by default. With bounded spend authority: `gtm.py spend check` first (exit 3 = don't), then the change, then `gtm.py spend log`; new campaigns, audiences or countries stay with the human |
+| grant, raise or widen any authority, turn on the paid track | **never** on your own; apply only a human's explicit instruction, quoted in plan.md |
 | change the profile, overrides, floors, panel, budget, cadence | **propose** in the digest; apply after a human says yes |
 | delete or overwrite anything outside `<state>` | **never** unattended |
 

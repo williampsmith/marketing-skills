@@ -30,8 +30,8 @@ Authority to send is earned per channel, in three steps.
    sequence the human approved, and stop on any reply.
 3. **Bounded.** Opt-in per channel. The agent sends without per-message approval, within daily caps,
    to contacts matching an approved segment, using approved templates. It can be switched on only
-   after 30 days of approve-to-send in that channel with a reply rate at or above the floor and no
-   complaints, spam reports or unsubscribe spikes.
+   after 30 days of approve-to-send in that channel with at least 50 sends, a reply rate of at least
+   2% and no complaints (details below).
 
 All sending uses a dedicated shared inbox on a separate sending domain (e.g. `hello@try<product>.com`),
 authenticated with SPF, DKIM and DMARC, so a mistake can't damage the main domain's deliverability.
@@ -82,10 +82,47 @@ What `send_batch.py` enforces:
 - **Personal data.** `<state>/sends.jsonl` logs counts without addresses, and cooldown keys are
   domains. The batch folder keeps addresses; nothing else does.
 
-The `bounded` step is not implemented yet (it arrives in 0.8).
+Bounded authority is described below.
 
 These stay at approve-to-send permanently, whatever the channel's step: press and editors, named
-enterprise accounts, existing customers in a dispute, and anyone who has replied before.
+enterprise accounts, existing customers in a dispute, and anyone who has replied before. Keep them
+out of every bounded segment.
+
+### Bounded sending, as implemented (0.8)
+
+| step | command | who |
+|---|---|---|
+| check eligibility | `gtm.py authority show` → `bounded_eligible` is `true` or the list of what's missing | anyone |
+| grant | `gtm.py authority grant <channel> --level bounded --template <id> --segment <id> [--daily-cap N] --quote "<their words>"` (repeat `--template`/`--segment` for more) | a human |
+| draft | every draft line carries an approved `template` and `segment`; others are skipped | the agent |
+| send | `send_batch.py <batch> --dry-run`, then without it; no `gtm.py approve` needed | the agent |
+| outcomes | `gtm.py outcome <channel> --replies N --complaints N` after each batch's replies come in | the agent, from what the human reports or the inbox shows |
+| revoke | `gtm.py authority grant <channel> --level draft --quote "<their words>"` (or `approve_to_send`) | a human |
+
+- **Promotion criteria** (`grant` refuses until all hold): at least 30 days at approve-to-send on that
+  channel, at least 50 messages sent since, a reply rate of at least 2%, and no complaints.
+- **Caps still apply**: the daily cap, suppression, cooldowns and the kill switch, exactly as above.
+- **Any complaint demotes**: `gtm.py outcome … --complaints 1` drops the channel back to
+  approve-to-send at once and records the date. Only a human can grant bounded again.
+
+### Spend, as implemented (0.8)
+
+Channels `paid_search` and `paid_social`. At `draft` (the default) every budget or bid change is a
+proposal in the digest. A human can grant bounded spend:
+`gtm.py authority grant paid_search --level bounded --daily-spend-cap 50 --max-change-pct 20 --quote "<their words>"`.
+
+- Before each change: `gtm.py spend check <channel> --usd <added today> --change-pct <±%>`. Exit 3
+  means don't (paused, not bounded, over the daily cap, or a bigger change than allowed).
+- After it: `gtm.py spend log <channel> --usd <amount> --change-pct <±%> --note "<what>"`.
+- New campaigns, audiences and countries stay with the human, and platform-side caps are set at or
+  below these.
+
+### Who grants authority
+
+Granting, raising or widening any authority (sending, spend, caps, templates, segments) is a human
+decision. The agent never decides it. It runs `authority grant` only to apply a human's explicit
+instruction, and quotes their words, with the date, in plan.md. Lowering authority (back to `draft`)
+or pausing is always allowed when something looks wrong.
 
 ## Always escalate
 

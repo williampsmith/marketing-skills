@@ -22,7 +22,7 @@ and is recent enough. A track works on its first unmet rung.
 
 A rung whose threshold is product-specific (`visited`, `pipeline`) reports "set a floor" until you
 set it, e.g. `"tracks": {"demand": {"rungs": {"visited": {"value": 2000}}}}`. Override any default the
-same way. Turn a track on or off with `"tracks": {"paid": {"enabled": true}}`.
+same way. Turn a track on or off with `gtm.py track <track> on|off` (turning paid on needs `--quote` with the human's words and a human-present run).
 
 ## The funnel template
 

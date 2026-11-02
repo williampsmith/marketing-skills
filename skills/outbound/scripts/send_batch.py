@@ -10,7 +10,9 @@ A batch is <state>/sends/<BATCH_ID>/drafts.jsonl, one draft per line:
      "channel": "outbound" | "citation_outreach" | "creators" | "lifecycle_email", "followup_of": null}
 `to` is one bare address. `key` (default: the address's domain) is what the cooldown counts.
 
-Approval comes from a human, applied with `gtm.py approve BATCH_ID --count N --quote "<their reply>"`:
+Under bounded authority (granted by a human after the promotion criteria are met), drafts that carry
+an approved `template` and `segment` go out without per-batch approval; others are skipped.
+Otherwise approval comes from a human, applied with `gtm.py approve BATCH_ID --count N --quote "<their reply>"`:
 it pins the first N drafts by content hash, so editing, reordering or adding drafts afterwards
 unapproves them. Before each message this script checks the kill switch; for the batch it checks
 the channel's authority and daily cap (sending as many as the cap allows today and leaving the rest
@@ -144,6 +146,8 @@ def plan_batch(s: dict, drafts: list[dict], batch: str, channel: str) -> tuple[l
             why = "`to` must be exactly one bare address"
         elif level == "approve_to_send" and gtm.draft_hash(d) not in approved:
             why = "not approved (or changed since approval)"
+        elif level == "bounded" and gtm.bounded_draft_ok(s, channel, d):
+            why = gtm.bounded_draft_ok(s, channel, d)
         elif addr in unresolved:
             why = "an earlier attempt didn't finish; a human must check whether it went out"
         elif is_suppressed(addr, sup):

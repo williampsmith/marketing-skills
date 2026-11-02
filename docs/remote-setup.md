@@ -112,7 +112,24 @@ go through PRs, and its own bookkeeping goes to the state store.
 | 3-7 | First PRs and drafts arrive, each tied to a bet. Review them hard: this is where you teach the claims ledger and the voice. |
 | 7 | `gtm.py status` shows the budget on track, no alerts, and open bets with check dates |
 
-## 5. Operating it
+## 5. Granting authority
+
+Every sending channel and both paid channels start at `draft`: the agent writes, a human sends or
+changes spend. Moving a channel up is a decision for the owner named in section 0, made in a reply to
+a digest or at the terminal. The agent applies the reply with the command below and quotes it in
+plan.md; it never decides this on its own.
+
+| when | command |
+|---|---|
+| the first batches look right and the sending inbox is set up | `gtm.py authority grant outbound --level approve_to_send --daily-cap 20 --quote "<their words>"` |
+| `gtm.py authority show` reports `bounded_eligible: true` (30 days, 50 sends, 2% replies, no complaints) and you've approved the templates and segments | `gtm.py authority grant outbound --level bounded --template t1 --segment s1 --quote "<their words>"` |
+| you want the agent to adjust ad budgets itself (paid track on: `gtm.py track paid on --quote "<their words>"`) | `gtm.py authority grant paid_search --level bounded --daily-spend-cap 50 --max-change-pct 20 --quote "<their words>"`; set the same or lower caps in the ad platform |
+
+To take authority back: `gtm.py authority grant <channel> --level draft --quote "<their words>"`. To stop everything at once:
+`gtm.py pause --reason "…"` (or reply "pause"). A single complaint on a bounded email channel drops it
+back to approve-to-send on its own.
+
+## 6. Operating it
 
 - **Pause**: reply "pause" to a digest, or run `gtm.py pause --reason "…"`. Every job stops until
   `gtm.py resume`. Disabling the scheduled job also works; state is in the store, so resuming
@@ -126,7 +143,7 @@ go through PRs, and its own bookkeeping goes to the state store.
   cause, then reply or rerun.
 - **Rotate tokens** like any other bot account. The agent never stores secrets in either repo.
 
-## 6. Upgrading a 0.3 install
+## 7. Upgrading a 0.3 install
 
 0.3 kept its state in `.marketing/` inside the product repo and committed it there. That still works
 (the `repo` backend), but the default is now to keep it outside:
