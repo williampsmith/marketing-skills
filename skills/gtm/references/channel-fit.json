@@ -47,7 +47,7 @@
           ]
         },
         "answer_page": {
-          "skill": "one-pager",
+          "skill": "content",
           "label": "Answer page for a lost prompt",
           "tracks": [
             "discoverability"

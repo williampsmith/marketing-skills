@@ -23,7 +23,7 @@ be inside the product repo.
 
 1. `python3 ../gtm/scripts/gtm.py where`. If `initialized` is false, run gtm init first.
 2. Read `<state>/claims.md`. If it is missing or older than the last release, build or refresh it
-   first (`../one-pager/references/claims-ledger.md`). Positioning built on unverified claims is
+   first (`../content/references/claims-ledger.md`). Positioning built on unverified claims is
    wasted work.
 3. **Migrating from 0.3:** if `<state>/profile.md` exists, fold its content into the matching
    sections below, then replace the old file's body with one line: `Moved to product-context.md on

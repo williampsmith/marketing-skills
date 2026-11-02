@@ -55,8 +55,10 @@ repo or in PostHog event properties.
    merge state by hand.
 3. **Apply replies.** Read the human's replies to the last digest (chat or issue). "pause" → `gtm.py
    pause --reason "<their words>"`. Approvals → apply exactly what was approved (e.g. "approve 2"
-   approves item 2 of "Needs you"), nothing more, and log each in plan.md. Unclear replies: ask,
-   don't guess.
+   approves item 2 of "Needs you"), nothing more, and log each in plan.md. A send batch approval
+   ("approve batch <id>, 12") → `gtm.py approve <id> --count 12`; a creative approval
+   ("approve creative <batch>: <ids>") → note the ids in plan.md for the human who posts them.
+   Unclear replies: ask, don't guess.
 4. Check tools: `python3`, `treg --version` and `treg balance`, `gh auth status` if PRs are expected.
    If treg is missing or empty, run only free jobs and alert.
 5. `gtm.py tick` → `focus`, `due`, `deferred`, `skipped`, `alerts`, `budget`, `tracks`. If it says
@@ -87,7 +89,7 @@ Ask the human only for what the repo can't tell you. Infer the rest and confirm.
    Set `goal` (one measurable line with a date) and `key_paths` in `<state>/gtm.json`. Ask how to
    notify (see Digest).
 4. **Foundation**, each confirmed with the human once, in this order:
-   - claims ledger `<state>/claims.md` (`../one-pager/references/claims-ledger.md`)
+   - claims ledger `<state>/claims.md` (`../content/references/claims-ledger.md`)
    - `../product-context`: `<state>/product-context.md` and the GTM profile (`gtm.py profile`). Fit
      uses the profile only once it is confirmed; until then it uses the motion's defaults.
    - measurement: `../measurement` setup (PostHog, the revenue source, Search Console), or record the
@@ -128,7 +130,7 @@ Skipped jobs (missing connection, ineligible channel, track off) go in the diges
 | job | recipe |
 |---|---|
 | `access_check` | `mkdir -p <state>/access && mv <state>/access/latest.json <state>/access/previous.json 2>/dev/null; python3 ../ai-search-optimization/scripts/check_ai_access.py <site_url> <key_paths…> --json <state>/access/latest.json` → record. A new problem is an alert: notify now. |
-| `watch` | `python3 ../comparison-pages/scripts/watch_pages.py` → record. Changes trigger `comparison_refresh`. |
+| `watch` | `python3 ../competitive-intel/scripts/watch_pages.py` → record. Changes trigger `comparison_refresh`. |
 | `audit` | `python3 ../ai-visibility-audit/scripts/run_panel.py --max-usd <cap>` → `score_panel.py <run> --previous <last run>` → `record audit --from-run <run>`, which also stores the scores as metrics (`ai:mention`, `ai:mention:<bucket>`, `ai:citation…`, `ai:share_of_voice…`) so bets can close on them. |
 | `outreach_refresh` | `python3 ../citation-outreach/scripts/outreach_targets.py <latest run>`. For each target, `gtm.py may outreach_refresh <domain>` first; triage up to 5 and draft up to 3 (citation-outreach steps 2-4) → `record outreach_refresh --key <domain>` per draft. |
 | `comparison_refresh` | comparison-pages step 5 on the changed pages → PR if a grid fact moved → `record comparison_refresh --event <event>` |
@@ -143,6 +145,8 @@ Skipped jobs (missing connection, ineligible channel, track off) go in the diges
 | `metrics_sync` | `../measurement`: `posthog.py sync` (send the outbox, pull funnel counts and queries) → record. |
 | `search_console` | `../measurement`: `search_console.py` (stored property) → record; exit 1 means an error, nothing written. |
 | `monthly_report` | `../measurement`: `report.py` → link the scorecard in the digest → record. |
+| `seo_crawl` | `../seo`: `crawl_check.py <site_url>` → record. New `noindex`, `status` or `robots` problems on key paths are alerts; the rest go to the backlog for work sessions. |
+| `outbound_signals` | `../outbound` steps 1-3: sweep the plan's signals, `gtm.py may outbound_signals <domain>` per account, research packs, verified contacts, drafts into a batch → `record outbound_signals --key <domain>` per account drafted, with `--cost`. The batch goes in "Needs you"; nothing is sent this run. |
 | `panel_review` | ai-visibility-audit panel design: propose changes, never apply them silently. Bump `panel_version`. |
 
 ## Focus, fit and the order of work
@@ -220,7 +224,7 @@ Full rules: `references/guardrails.md` and `references/compliance.md`.
 | measure, research, score, read pages, draft, write `<state>` | yes |
 | spend treg balance | yes, within `budget --need` and the per-run cap |
 | site changes, pages, robots.txt, schema, tracking code | **PR only**: a human merges |
-| outreach, posts, profile edits, any message to a person | **draft only**, unless the human granted approve-to-send or bounded authority for that channel |
+| outreach, posts, profile edits, any message to a person | **draft only**. Email on a channel a human granted approve-to-send (`gtm.py authority grant <channel> --level approve_to_send`): only the drafts a human approved (`gtm.py approve <batch> --count N`), through `../outbound/scripts/send_batch.py`, which re-checks the kill switch, caps, suppression and cooldowns. Posts and community replies are never sent by the agent. |
 | change the profile, overrides, floors, panel, budget, cadence | **propose** in the digest; apply after a human says yes |
 | delete or overwrite anything outside `<state>` | **never** unattended |
 

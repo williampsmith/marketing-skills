@@ -27,12 +27,17 @@ This is the high-level runbook. Mechanics for each host are in
 | **GitHub token** for a bot or machine user | clone the product repo, push branches, open PRs; push the state repo if you use one | **only those repos**: contents + pull requests write. Fine-grained PAT or GitHub App. |
 | **PostHog Cloud** project (measurement) | funnel counts, attribution, the team's Growth dashboard | the project API key (`phc_`, send-only) and a personal API key (`phx_`) limited to reading queries on that one project, both as env vars on the agent host |
 | **Search Console** (optional) | clicks and rankings | connected once in treg's connected accounts; no Google key on the host |
+| **Sending inbox** (optional, only for approve-to-send) | email the drafts a human approved | a shared inbox on a separate sending domain (SPF, DKIM, DMARC set up; see `skills/outbound/references/deliverability.md`); `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` as env vars on the agent host; postal address and opt-out line in `gtm.json → sender` |
 | **Model access** | the agent itself | Claude Code: an Anthropic account or API key. Hermes: whichever provider it's configured with. |
 
 The agent never needs a billing key (Stripe, RevenueCat, …): revenue reaches it through PostHog.
 
-What the agent must **not** get: deploy credentials for the website, DNS or CDN access, email
-or social logins, or analytics admin. Everything public goes through a human. That's what keeps
+Sending authority is granted per channel by a human, never by the agent:
+`gtm.py authority grant outbound --level approve_to_send --daily-cap 20`. Until then every channel
+is drafts only, and even after it the agent sends only the batches a human approved.
+
+What the agent must **not** get: deploy credentials for the website, DNS or CDN access, logins to
+the main domain's email or to social accounts, or analytics admin. Everything public goes through a human. That's what keeps
 the autonomy gates real, not a matter of policy.
 
 **Protect the default branch** of the product repo. Require a PR review to merge, so nothing the

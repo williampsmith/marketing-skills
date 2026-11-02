@@ -92,7 +92,7 @@ Then choose **one** action per target:
 | Gov / standard / encyclopedia | **skip** pitching | cite them in your own pages instead |
 
 If many targets need something you don't have, such as benchmark data, a public test, or a free
-checker tool, propose that **linkable asset** to the user as a `one-pager` (or a small tool). One
+checker tool, propose that **linkable asset** to the user as a `content` (or a small tool). One
 good asset can unlock a dozen pitches.
 
 ### 3. Find the right person (treg, verified only)
@@ -121,12 +121,20 @@ One file per target. Under 120 words for an email; a forum reply as long as the 
 Forum replies answer the question first, give the general method, name the options including
 competitors fairly, and disclose in the same sentence that mentions the product.
 
+**Sending email pitches.** By default a human sends them. If a human has granted the
+`citation_outreach` channel approve-to-send (`gtm.py authority show`), put the email drafts in a
+batch `<state>/sends/<date>-citations/drafts.jsonl` (key = the target's domain, channel
+`citation_outreach`), list it under the digest's "Needs you", apply the human's approval with
+`gtm.py approve <batch> --count N`, and send with `../outbound/scripts/send_batch.py` (dry run
+first). Editors and press stay at per-batch approval permanently. Forum replies are always posted
+by a human from their own account.
+
 ### 5. Track and measure
 
 - Update `targets.json` status (`triaged → drafted → sent → landed | declined | skip`) and
   `tracker.md` (who sent it, when).
 - Add each pitched URL to the watch list so you see when it starts naming you:
-  `python3 ../comparison-pages/scripts/watch_pages.py --add <url> --purpose target --expect "<Brand>"`
+  `python3 ../competitive-intel/scripts/watch_pages.py --add <url> --purpose target --expect "<Brand>"`
   (the sibling skill's script; it reads pages through treg for free).
 - A target is **landed** when the page names you accurately. It's a **win** when a later audit shows
   the prompts it was cited on flip to named. Expect weeks: the editor has to update the page, and the

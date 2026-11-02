@@ -1,6 +1,6 @@
 ---
 name: comparison-pages
-description: Build and maintain honest "X vs Y", "alternatives to X" and "switching from X" pages that AI answer engines cite on high-intent comparison questions. Builds a sourced dossier per competitor through treg (their own pricing and docs pages, the ads they run, review-complaint patterns, what the engines say about them), enforces a fairness gate where every claim about a competitor is quoted from their current page with a date, ships the page through the one-pager pipeline, and watches competitor pages so comparisons are refreshed when competitors change. Use when the audit shows losses on comparison/alternatives prompts, or the user asks for comparison pages, competitor pages, "vs" pages, alternatives pages, or competitive positioning content.
+description: Build and maintain honest "X vs Y", "alternatives to X" and "switching from X" pages that AI answer engines cite on high-intent comparison questions. Builds a sourced dossier per competitor through treg (their own pricing and docs pages, the ads they run, review-complaint patterns, what the engines say about them), enforces a fairness gate where every claim about a competitor is quoted from their current page with a date, ships the page through the content pipeline, and watches competitor pages with the shared watcher in competitive-intel so comparisons are refreshed when competitors change. Use when the audit shows losses on comparison/alternatives prompts, or the user asks for comparison pages, competitor pages, "vs" pages, alternatives pages, or competitive positioning content.
 ---
 
 # Comparison pages
@@ -16,7 +16,7 @@ The catch is that comparison pages break in two ways. They're **unfair**: one-si
 discounted by readers and engines, and false comparative claims are a legal risk (false
 advertising). Or they're **stale**: the competitor changes pricing or ships the missing feature, and
 your page is now wrong. This skill exists for those two failure modes. The writing itself is the
-`one-pager` pipeline.
+`content` pipeline.
 
 `<state>` below is the marketing state directory printed by `python3 ../gtm/scripts/gtm.py where`
 (field `root`). It lives outside the product repo by default; site changes still go to the product
@@ -28,7 +28,7 @@ the current top answers lack, and no AI-tell phrasing.
 ## Requires
 
 - `<state>/product-context.md`, `<state>/claims.md` (your side of every comparison)
-- The `one-pager` skill (drafting, review gates, shipping) and a recent audit run if available
+- The `content` skill (drafting, review gates, shipping) and a recent audit run if available
 - treg for competitor research (mostly free page reads; a few cents for ads and reviews)
 
 ## State
@@ -36,7 +36,7 @@ the current top answers lack, and no AI-tell phrasing.
 ```
 <state>/competitors/<slug>.md   dossier: sourced facts with URL + date + quote
 <state>/watch.json              competitor source pages, each mapped to the pages that cite it
-<state>/pages/<slug>/           as in one-pager, plus grid.md (the sourced comparison grid)
+<state>/pages/<slug>/           as in ../content, plus grid.md (the sourced comparison grid)
 ```
 
 ## The run
@@ -79,7 +79,7 @@ Choose the page type:
 Add every source page to the watch list, mapped to the pages that will rely on it:
 
 ```bash
-python3 <skill>/scripts/watch_pages.py --add https://competitor.com/pricing --purpose competitor --used-by site/compare/x-vs-us.html
+python3 ../competitive-intel/scripts/watch_pages.py --add https://competitor.com/pricing --purpose competitor --used-by site/compare/x-vs-us.html
 ```
 
 ### 3. Build the grid (the fairness gate)
@@ -103,9 +103,9 @@ The rules:
 - Use competitor names nominatively. Don't use their logos or anything that implies affiliation, and
   don't disparage. Describe, cite, and let the reader decide.
 
-### 4. Write and ship through `one-pager`
+### 4. Write and ship through `content`
 
-Run the `one-pager` pipeline from phase 2, with the grid as the core asset:
+Run the `content` pipeline from phase 2, with the grid as the core asset:
 
 - The quick answer states who each option is for. "X if you need A and B; <You> if you need C,"
   with no "best".
@@ -121,7 +121,7 @@ Run the `one-pager` pipeline from phase 2, with the grid as the core asset:
 The scheduled run (or `gtm weekly`) runs:
 
 ```bash
-python3 <skill>/scripts/watch_pages.py --only competitor
+python3 ../competitive-intel/scripts/watch_pages.py --only competitor
 ```
 
 For each `CHANGED` competitor page, read the diff in `<state>/watch/report.md`. If a fact in the

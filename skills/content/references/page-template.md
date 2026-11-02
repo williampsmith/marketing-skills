@@ -1,4 +1,4 @@
-# One-pager template
+# Answer page template (also the base for integration and use-case pages)
 
 Adapt the markup to the site's framework and components. The structure and order are what matter.
 

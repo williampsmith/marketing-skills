@@ -186,6 +186,17 @@ class UpgradeTest(Base):
         self.assertIn("fit_review", s["jobs"])
         self.assertEqual(s["profile"]["motion"], "self_serve")
 
+    def test_upgrade_points_moved_jobs_at_their_new_skill(self):
+        self.run_cli("init")
+        s = self.state()
+        s["jobs"]["watch"]["skill"] = "comparison-pages"
+        s["jobs"]["work_session"]["skill"] = "one-pager"
+        self.put_state(s)
+        self.run_cli("init")
+        s = self.state()
+        self.assertEqual(s["jobs"]["watch"]["skill"], "competitive-intel")
+        self.assertEqual(s["jobs"]["work_session"]["skill"], "gtm")
+
     def test_force_reset_keeps_history(self):
         self.run_cli("init", "--motion", "enterprise")
         self.run_cli("record", "audit")
@@ -205,7 +216,7 @@ class DiscoverabilityTest(Base):
         self.assertTrue(lad["rungs"]["reachable"]["met"])
         self.assertTrue(lad["rungs"]["known"]["met"])
         self.assertEqual(lad["current"], "associated")
-        self.assertIn("one-pager", lad["work_on"])
+        self.assertIn("content", lad["work_on"])
 
     def test_known_issue_and_access_block_and_alerts(self):
         self.run_cli("init")
@@ -612,7 +623,7 @@ class RobustnessTest(Base):
 
 
 class MissingSkillsTest(Base):
-    installed = {"ai-search-optimization", "entity-presence", "one-pager", "citation-outreach", "comparison-pages",
+    installed = {"ai-search-optimization", "entity-presence", "content", "citation-outreach", "comparison-pages",
                  "ai-visibility-audit", "gtm", "product-context", "writing"}
 
     def test_without_measurement_the_funnel_is_not_gated_and_tactics_skip_missing_skills(self):

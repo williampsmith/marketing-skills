@@ -9,7 +9,7 @@ Every sentence the plugin publishes passes the same gates, whichever skill draft
 make that possible:
 
 - `<state>/claims.md`: what the product demonstrably does, with qualifiers (method:
-  `../one-pager/references/claims-ledger.md`).
+  `../content/references/claims-ledger.md`).
 - `<state>/product-context.md`: buyer, voice, customer language, competitors (`../product-context`).
 
 `<state>` is `python3 ../gtm/scripts/gtm.py where` → `"root"`.

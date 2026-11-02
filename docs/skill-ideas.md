@@ -1,7 +1,7 @@
 # Skill backlog
 
 Built: `gtm` (entry point), `product-context`, `writing`, `ai-visibility-audit`,
-`ai-search-optimization`, `one-pager`, `citation-outreach`, `entity-presence`, `comparison-pages`.
+`ai-search-optimization`, `content`, `citation-outreach`, `entity-presence`, `comparison-pages`.
 
 The rest of the roadmap is in [`design/growth-operator.md`](design/growth-operator.md), section 12
 (skills) and section 13 (phases). Ideas from the earlier backlog and where they went:

@@ -28,8 +28,13 @@ the loop and `docs/design/growth-operator.md` for the design being implemented.
 - `skills/ai-visibility-audit/scripts/run_panel.py` (treg CLI batch runner) and `score_panel.py`
   (scoring + diff). `skills/ai-search-optimization/scripts/check_ai_access.py` (live site check).
   `skills/citation-outreach/scripts/outreach_targets.py` (rank cited URLs).
-  `skills/comparison-pages/scripts/watch_pages.py` (page change + mention watcher, shared by
-  comparison-pages, citation-outreach and entity-presence via `../comparison-pages/scripts/`).
+  `skills/competitive-intel/scripts/watch_pages.py` (page change + mention watcher, shared by
+  comparison-pages, citation-outreach and entity-presence via `../competitive-intel/scripts/`).
+  `skills/seo/scripts/crawl_check.py` (technical crawl), `skills/customer-research/scripts/attention.py`
+  (attention weights from research evidence), `skills/outbound/scripts/send_batch.py` (sends only
+  approved batches, through gtm.py's `send_allowed`; SMTP from env only; tests replace
+  `smtp_connect`), `skills/creative/scripts/review_page.py` (self-contained review page; refuses
+  assets without a claim row or an AI disclosure).
   All Python is **stdlib only** and runs with plain `python3` (3.9+), since it executes inside
   other people's repos.
 - `tests/`: `python3 -m unittest discover tests`. Run after any script change. Tests that touch
@@ -49,7 +54,8 @@ the loop and `docs/design/growth-operator.md` for the design being implemented.
   repo: `gtm.json`, `product-context.md`, `claims.md`, `entity.md`, `prompt-panel.json`, `pages.md`,
   `pages/<slug>/`, `runs/<date>/`, `metrics/<metric>.jsonl`, `experiments.jsonl`, `spend.jsonl`,
   `posthog-outbox.jsonl`, `plan.md`, `digests/`, `access/`, `watch/`, `watch.json`, `outreach/`,
-  `competitors/`, `entity/`, `launches/`. Keep those names stable across skills. Scripts resolve the
+  `competitors/`, `entity/`, `launches/`, `seo/`, `research/`, `outbound/accounts/`,
+  `sends/<batch>/`, `sends.jsonl`, `approvals.jsonl`, `suppression.csv`, `creative/<batch>/`, `social/`. Keep those names stable across skills. Scripts resolve the
   directory through `marketing_state.state_root()`; skill prose writes `<state>/…`. The product repo
   only receives PRs.
 - treg: skills describe jobs and give **dated example** endpoint ids, always with "verify with

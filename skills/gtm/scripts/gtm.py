@@ -26,6 +26,8 @@ experiment results.
     python3 gtm.py learnings [--accept ID | --reject ID]
     python3 gtm.py profile [--motion M --acv N --cycle-days N --regulated R --attention ch=0.3] [--confirm]
     python3 gtm.py connect posthog [on|off] | connect search_console sc-domain:example.com | connect revenue stripe
+    python3 gtm.py authority show | grant CHANNEL --level approve_to_send [--daily-cap 20]
+    python3 gtm.py approve BATCH --count N       # a human approved the first N drafts of a batch
     python3 gtm.py pause [--reason R] | resume   # kill switch
     python3 gtm.py digest                        # data half of digests/<date>.md
     python3 gtm.py store use SPEC                # remember a store (path, git URL or "repo") for this repo
@@ -72,7 +74,7 @@ DEFAULT_JOBS = {
         "self_check": "re-fetch the failing URL once before alerting",
         "stop": "alert immediately; never change robots.txt or the CDN yourself"},
     "watch": {
-        "every_days": 7, "usd": 0.0, "stages": ["prelaunch", "launched"], "skill": "comparison-pages",
+        "every_days": 7, "usd": 0.0, "stages": ["prelaunch", "launched"], "skill": "competitive-intel",
         "track": "discoverability", "kind": "sensor",
         "acts_when": "a watched page changed or a mention appeared or disappeared",
         "self_check": "ignore changes that are only dates, prices in other currencies or cookie banners",
@@ -150,6 +152,20 @@ DEFAULT_JOBS = {
         "acts_when": "monthly",
         "self_check": "every number in the report names its source",
         "stop": "none: a report is read-only"},
+    "seo_crawl": {
+        "every_days": 7, "usd": 0.0, "stages": ["launched"], "skill": "seo",
+        "track": "demand", "kind": "sensor",
+        "acts_when": "a page is unreachable, noindexed, canonicalised away, orphaned or thin",
+        "self_check": "re-fetch a page once before reporting it broken; staging hosts are accepted_problems",
+        "stop": "fixes go through work sessions as PRs; never noindex or redirect a page that earns traffic"},
+    "outbound_signals": {
+        "every_days": 7, "usd": 0.5, "stages": ["launched"], "skill": "outbound",
+        "track": "demand", "kind": "improvement", "max_actions": 10,
+        "requires": ["channel:outbound", "profile:confirmed"],
+        "cooldown_days": 90, "dedupe_key": "account domain",
+        "acts_when": "an account matching the ICP shows a buying signal and is outside its cooldown",
+        "self_check": "the signal is recent and about the problem we solve; the contact is the right role",
+        "stop": "drafts into a batch for approval; suppressed or cooled-down accounts are skipped"},
     "panel_review": {
         "every_days": 90, "usd": 0.0, "stages": ["launched"], "skill": "ai-visibility-audit",
         "track": "discoverability", "kind": "review",
@@ -168,7 +184,7 @@ DISCOVERABILITY_RUNGS = ["reachable", "known", "associated", "preferred"]
 DISCOVERABILITY_SKILLS = {
     "reachable": ["ai-search-optimization"],
     "known": ["entity-presence", "ai-search-optimization"],
-    "associated": ["one-pager", "citation-outreach"],
+    "associated": ["content", "citation-outreach"],
     "preferred": ["comparison-pages", "citation-outreach"],
 }
 
@@ -221,6 +237,9 @@ DEFAULT_TRACK_RUNGS = {
 DEFAULT_TRACKS_ENABLED = {"measurement": True, "discoverability": True, "demand": True,
                           "conversion": True, "retention": True, "paid": False}
 SHARES = {"focus": 0.60, "standing": 0.25}
+# skills renamed between versions; stored jobs that name the old skill are pointed at the new one
+RENAMED_SKILLS = {"one-pager": "content"}
+MOVED_JOBS = {("watch", "comparison-pages")}  # (job, old skill): jobs now run by a different skill
 FOCUS_HOLD_DAYS = 30
 
 
@@ -386,6 +405,8 @@ def upgrade(s: dict) -> dict:
         cur = s["jobs"].setdefault(name, {})
         for k, v in job.items():
             cur.setdefault(k, v)
+        if cur.get("skill") in RENAMED_SKILLS or (name, cur.get("skill")) in MOVED_JOBS:
+            cur["skill"] = job["skill"]
     s["schema"] = SCHEMA
     return s
 
@@ -1500,6 +1521,109 @@ def cmd_connect(a) -> int:
     return 0
 
 
+# --------------------------------------------------------------------------- sending authority
+# Every channel starts at "draft": the agent writes, a human sends. "approve_to_send": the agent sends
+# exactly the drafts a human approved, within a daily cap. "bounded" arrives in a later phase.
+SEND_CHANNELS = ("outbound", "citation_outreach", "creators", "lifecycle_email")
+LEVELS = ("draft", "approve_to_send")
+DEFAULT_AUTHORITY = {"level": "draft", "daily_cap": 20, "cooldown_days": 30}
+
+
+def authority(s: dict, channel: str) -> dict:
+    return {**DEFAULT_AUTHORITY, **(s.get("authority") or {}).get(channel, {})}
+
+
+def approvals() -> list[dict]:
+    return read_jsonl(R() / "approvals.jsonl")
+
+
+def approved_count(batch: str) -> int:
+    return sum(int(r["count"]) for r in approvals() if r["batch"] == batch)
+
+
+def send_log() -> list[dict]:
+    return read_jsonl(R() / "sends.jsonl")
+
+
+def sent_in_batch(batch: str) -> int:
+    return sum(int(r["n"]) for r in send_log() if r["batch"] == batch)
+
+
+def sends_today(channel: str) -> int:
+    d = today().isoformat()
+    return sum(int(r["n"]) for r in send_log() if r["channel"] == channel and r["date"] == d)
+
+
+def send_allowed(s: dict, channel: str, n: int, batch: str) -> tuple[bool, str]:
+    """May the agent send n messages of this batch now? Checked before every send."""
+    if s.get("paused"):
+        return False, "paused"
+    auth = authority(s, channel)
+    if auth["level"] == "draft":
+        return False, f"{channel} is drafts only: a human sends, or grants approve_to_send"
+    left_today = int(auth["daily_cap"]) - sends_today(channel)
+    if n > left_today:
+        return False, f"{n} sends would pass {channel}'s daily cap of {auth['daily_cap']} ({left_today} left today)"
+    if auth["level"] == "approve_to_send":
+        left_batch = approved_count(batch) - sent_in_batch(batch)
+        if n > left_batch:
+            return False, f"batch {batch} has {left_batch} approved sends left, not {n}"
+    return True, "ok"
+
+
+def record_send(channel: str, n: int, batch: str, key: str | None = None, cooldown_job: str | None = None) -> None:
+    """Log a send (no addresses: the batch folder holds those) and start the key's cooldown."""
+    with locked():
+        append_jsonl(R() / "sends.jsonl", {"date": today().isoformat(), "channel": channel, "batch": batch, "n": n})
+        if key and cooldown_job:
+            s = load_state()
+            s.setdefault("keys", {}).setdefault(cooldown_job, {})[key] = today().isoformat()
+            save_state(s)
+
+
+def cmd_authority(a) -> int:
+    s = load_state()
+    if a.action == "show":
+        print(json.dumps({ch: authority(s, ch) for ch in SEND_CHANNELS}, indent=2))
+        return 0
+    if a.channel not in SEND_CHANNELS:
+        print(f"channel is one of {', '.join(SEND_CHANNELS)}", file=sys.stderr)
+        return 1
+    if a.level not in LEVELS:
+        print(f"level is one of {', '.join(LEVELS)}", file=sys.stderr)
+        return 1
+    cur = authority(s, a.channel)
+    cur.update({"level": a.level, "granted": today().isoformat()})
+    if a.daily_cap is not None:
+        cur["daily_cap"] = a.daily_cap
+    if a.cooldown_days is not None:
+        cur["cooldown_days"] = a.cooldown_days
+    s.setdefault("authority", {})[a.channel] = cur
+    save_state(s)
+    print(json.dumps({a.channel: cur}, indent=2))
+    return 0
+
+
+def cmd_approve(a) -> int:
+    """Apply a human's approval of a drafted batch (e.g. their digest reply "approve batch X, 12")."""
+    d = R() / "sends" / a.batch / "drafts.jsonl"
+    drafts = read_jsonl(d)
+    if not drafts:
+        print(f"no drafts at {d}", file=sys.stderr)
+        return 1
+    if not 0 < a.count <= len(drafts):
+        print(f"--count must be 1..{len(drafts)} (drafts in the batch)", file=sys.stderr)
+        return 1
+    if approved_count(a.batch):
+        print(f"batch {a.batch} is already approved ({approved_count(a.batch)}); approvals aren't topped up",
+              file=sys.stderr)
+        return 1
+    append_jsonl(R() / "approvals.jsonl", {"date": today().isoformat(), "batch": a.batch, "count": a.count,
+                                           "by": a.by})
+    print(f"approved the first {a.count} of {len(drafts)} drafts in {a.batch}")
+    return 0
+
+
 def cmd_pause(a) -> int:
     s = load_state()
     s["paused"] = True
@@ -1724,6 +1848,16 @@ def main() -> int:
     p.add_argument("value", nargs="?", default="on",
                    help="posthog: on | off; search_console: the property (sc-domain:… or https://…/) | off; "
                         "revenue: " + " | ".join(REVENUE_SOURCES) + " | none")
+    p = sub.add_parser("authority", help="who may send on a channel: drafts only, or approve-to-send")
+    p.add_argument("action", choices=["show", "grant"])
+    p.add_argument("channel", nargs="?")
+    p.add_argument("--level")
+    p.add_argument("--daily-cap", type=int)
+    p.add_argument("--cooldown-days", type=int)
+    p = sub.add_parser("approve", help="apply a human's approval of a drafted batch")
+    p.add_argument("batch")
+    p.add_argument("--count", type=int, required=True, help="approve the first N drafts, in file order")
+    p.add_argument("--by", default="human", help="who approved, as they signed the reply")
     p = sub.add_parser("pause")
     p.add_argument("--reason", default="")
     p = sub.add_parser("budget")
@@ -1800,7 +1934,7 @@ def main() -> int:
                "focus": cmd_focus, "fit": cmd_fit, "tracks": cmd_tracks, "next": cmd_next, "budget": cmd_budget,
                "record": cmd_record, "may": cmd_may, "metric": cmd_metric, "bet": cmd_bet,
                "learnings": cmd_learnings, "pause": cmd_pause, "resume": cmd_resume, "profile": cmd_profile,
-               "stage": cmd_stage, "connect": cmd_connect, "digest": cmd_digest, "store": cmd_store, "sync": cmd_sync,
+               "stage": cmd_stage, "connect": cmd_connect, "authority": cmd_authority, "approve": cmd_approve, "digest": cmd_digest, "store": cmd_store, "sync": cmd_sync,
                "migrate": cmd_migrate}[a.cmd]
     try:
         if a.cmd in ("where", "store"):

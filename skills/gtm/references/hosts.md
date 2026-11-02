@@ -41,18 +41,21 @@ skills directory, keeping the skills side by side. Then:
 - With measurement on PostHog, the agent's environment also needs `POSTHOG_PROJECT_API_KEY`,
   `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID` and `POSTHOG_HOST` (see `../measurement`). No
   billing keys: revenue reaches the agent through PostHog.
+- If a human has granted a channel approve-to-send, the environment also needs the dedicated
+  sending inbox: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` (see
+  `../outbound/references/deliverability.md`). Leave them out and every channel stays drafts only.
 - Create the cron job with Hermes's scheduler, using the prompt above, daily. Cron jobs persist in the
   agent's data directory (e.g. `/opt/data/cron/` in the Docker image). If you manage agents
   declaratively, keep the job definition in that config like the rest of the agent's setup.
 - Set `notify.channel: "gateway"` in gtm.json. The digest's "Needs you" goes to the agent's chat,
   and your replies ("approve 1, 3") are applied on the next tick.
-- Long skills (one-pager, outreach triage) can be split across the agent's subagents. Give each one
+- Long skills (content pages, outreach triage) can be split across the agent's subagents. Give each one
   the job recipe and the gates, never the whole program.
 
 ## Claude Code
 
 - Cloud: `/schedule` a daily routine with the prompt above on the product repo. Add
-  `MARKETING_STATE=<state repo git URL>`, the treg token and the PostHog variables as environment secrets, and give the
+  `MARKETING_STATE=<state repo git URL>`, the treg token, the PostHog variables and, if a channel may send, the SMTP variables as environment secrets, and give the
   routine write access to the state repo. The skill's "Every run" steps pull and push it.
 - Own server: cron runs Claude Code headless in the product repo once a day. The `dir` backend is
   enough.

@@ -130,7 +130,7 @@ On each key page, especially pages aimed at a specific question:
   themselves, specific enough to quote (numbers, names, conditions). Show "Updated <date>" and put
   the same date in the schema.
 - **One page per intent.** A focused page answering one question gets cited; a long page covering
-  many topics gets skimmed. Creating these is the `one-pager` skill's job. This step finds the
+  many topics gets skimmed. Creating these is the `content` skill's job. This step finds the
   gaps and lists them in `<state>/pages.md`.
 - **Main content in the initial HTML** (server-rendered or static). The checker's `words` column
   flags client-rendered pages (fewer than 150 words in the raw HTML).
@@ -176,7 +176,7 @@ chose to keep. Then:
       the source playbook saw a jump after about a week)
 
 Report: the changes with file paths, what is still in human hands (CDN, analytics, domains), and
-the gap intents handed to `one-pager`.
+the gap intents handed to `content`.
 
 ## Using treg here
 

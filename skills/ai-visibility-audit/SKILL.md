@@ -100,8 +100,8 @@ Turn the report into actions. Each finding goes to the skill that fixes it:
 | Finding | Meaning | Next |
 |---|---|---|
 | Named nowhere, even on `brand` prompts, or described wrongly | the engines don't know the entity, or confuse it with something else | `ai-search-optimization` (access) + `entity-presence` |
-| Named on `brand`, absent on `category`/`problem` | known, not associated with the job | `one-pager` on the gap intents |
-| Cited rarely though named | engines learned you elsewhere; your pages aren't the best source | `one-pager` answer pages + check access for that engine's bot |
+| Named on `brand`, absent on `category`/`problem` | known, not associated with the job | `content` on the gap intents |
+| Cited rarely though named | engines learned you elsewhere; your pages aren't the best source | `content` answer pages + check access for that engine's bot |
 | Competitor wins `comparison`/`alternatives` | they own the comparison content | `comparison-pages` |
 | Same third-party pages in every gap | that's where answers come from | `citation-outreach` (ranks the exact URLs) |
 | One engine far behind the rest | engine-specific access or index issue | check that bot in `ai-search-optimization` (Bing index feeds ChatGPT and Copilot) |

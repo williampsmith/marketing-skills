@@ -8,8 +8,8 @@
     {
       "name": "marketing",
       "source": "./",
-      "description": "Growth operator (gtm) plus agent-discoverability skills: ai-visibility-audit, ai-search-optimization, one-pager, citation-outreach, entity-presence, comparison-pages.",
-      "version": "0.5.0"
+      "description": "Growth operator (gtm) for the whole funnel: product-context, measurement, writing, ai-visibility-audit, ai-search-optimization, entity-presence, content, comparison-pages, competitive-intel, citation-outreach, seo, customer-research, outbound, creative, social.",
+      "version": "0.6.0"
     }
   ]
 }

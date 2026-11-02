@@ -68,10 +68,16 @@ into which tactics get tried next. A result becomes a learning only after a huma
 | `writing` | The gates every draft passes: claims from the ledger, an information-gain test, no AI-tell phrasing | free |
 | `ai-visibility-audit` | Runs a fixed prompt panel across 5 engines, scores mention, citation, share of voice and gaps, diffs against the last run | ~$0.02 per prompt across all engines |
 | `ai-search-optimization` | Bot access (robots.txt + CDN), llms.txt, feeds, quick answers, JSON-LD, IndexNow, AI-referral tracking; verifies against production | ~free |
-| `one-pager` | Claims ledger from the code, intent mining, engine recon, evidence, draft, review gates, ship, track | ~$0.05-0.30 per page |
+| `content` | Claims ledger from the code, intent mining, engine recon, evidence, draft, review gates, ship, track | ~$0.05-0.30 per page |
 | `citation-outreach` | Ranks the exact third-party URLs engines cite when you lose, triages them, finds verified contacts, drafts honest pitches/replies for a human to send, watches for the mention | <$0.50 per 30 targets |
 | `entity-presence` | Canonical entity card, trained-knowledge vs retrieval probe, profile inventory (Wikidata, directories, stores, GitHub), paste-ready fixes, sameAs wiring | ~$0.15 per probe |
-| `comparison-pages` | Sourced competitor dossiers, a fairness-gated comparison grid, vs/alternatives/switching pages via `one-pager`, competitor-change watcher | ~$0.05-0.10 per page |
+| `comparison-pages` | Sourced competitor dossiers, a fairness-gated comparison grid, vs/alternatives/switching pages via `content` | ~$0.05-0.10 per page |
+| `competitive-intel` | Competitor profiles, teardowns of how they grew, and the page-change watcher the other skills share | ~free to ~$0.50 per teardown |
+| `seo` | Technical crawl (status, noindex, canonicals, thin HTML, orphans, broken links), the query map, Search Console rankings | free |
+| `customer-research` | Where buyers actually spend attention (measured, feeding fit), their language and objections | ~$0.10-0.50 per study |
+| `outbound` | Buying-signal sweeps, account research, verified contacts, drafts into batches; sends only approved batches on channels a human opened, within caps | ~$0.50 per weekly sweep |
+| `creative` | Briefs, channel research, scripts and variants, generation through treg's image, video and voice models, a review page; nothing publishes | per asset: ~$0.01 images, ~$1 video |
+| `social` | Organic posts and community answers drafted from launches, pages and bets, for a human to post | free |
 
 ### Where the data lives
 

@@ -37,6 +37,29 @@ All sending uses a dedicated shared inbox on a separate sending domain (e.g. `he
 authenticated with SPF, DKIM and DMARC, so a mistake can't damage the main domain's deliverability.
 Every reply goes to a human.
 
+### Approve-to-send, as implemented (0.6)
+
+Channels: `outbound`, `citation_outreach`, `creators`, `lifecycle_email`. Every one starts at
+`draft`.
+
+| step | command | who |
+|---|---|---|
+| grant | `gtm.py authority grant <channel> --level approve_to_send --daily-cap 20 [--cooldown-days 30]` | a human, never the agent |
+| check | `gtm.py authority show` | anyone |
+| draft | write `<state>/sends/<batch>/drafts.jsonl`, one channel per batch, best first | the agent |
+| approve | the human's reply ("approve batch <id>, 12") applied as `gtm.py approve <id> --count 12`; approves the first 12 lines; a batch is approved once and never topped up | the agent applies the human's words exactly |
+| send | `../outbound/scripts/send_batch.py <batch> --dry-run`, then without `--dry-run` | the agent |
+
+Before sending, `send_batch.py` asks `gtm.py`'s `send_allowed` and refuses the whole batch (exit 3)
+if the program is paused, the channel is still `draft`, the batch would pass the channel's daily cap,
+or it holds more sendable messages than were approved and not yet sent. Per message it skips
+anything already sent, any address or domain in `<state>/suppression.csv`, and any key (account
+domain) contacted on that channel inside the authority's `cooldown_days`, unless the draft is a
+follow-up in an approved sequence. Each message gets the sender's postal address and opt-out line
+from `gtm.json → sender` and a `List-Unsubscribe` header, comes from `SMTP_FROM` on the dedicated
+sending domain, and is logged to `<state>/sends.jsonl` without the address. The batch folder keeps
+addresses; nothing else does. The `bounded` step is not implemented yet (it arrives in 0.8).
+
 These stay at approve-to-send permanently, whatever the channel's step: press and editors, named
 enterprise accounts, existing customers in a dispute, and anyone who has replied before.
 

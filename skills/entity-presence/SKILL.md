@@ -141,7 +141,7 @@ Hand off to `ai-search-optimization` or do it directly:
 ### 6. Watch and measure
 
 - Add every official profile to the watch list with the one-liner as the expected text:
-  `python3 ../comparison-pages/scripts/watch_pages.py --add <url> --purpose profile --expect "<a distinctive phrase from the one-liner>"`.
+  `python3 ../competitive-intel/scripts/watch_pages.py --add <url> --purpose profile --expect "<a distinctive phrase from the one-liner>"`.
   Profiles drift: directories rewrite descriptions and marketplaces change categories.
 - Re-run the probe quarterly, and whenever a major model version ships. Trained-knowledge results
   only move when new models are trained, so they're slow and shouldn't be expected weekly.
