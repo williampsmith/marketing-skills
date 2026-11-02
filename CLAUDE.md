@@ -39,8 +39,10 @@ the loop and `docs/design/growth-operator.md` for the design being implemented.
   it against textbook values and against gtm.py's own z-test).
   `skills/lifecycle/` and `skills/paid/` are prose only: lifecycle sends through
   `send_batch.py` (channel `lifecycle_email`), paid gates spend through `gtm.py spend check|log`.
-  Sending and spend authority (`authority`, `approve`, `outcome`, `spend`; levels draft,
-  approve_to_send, bounded; promotion criteria in `PROMOTION`) lives in gtm.py and is tested in
+  Sending and spend authority (`authority`, `approve`, `outcome`, `spend`, `track`; levels draft,
+  approve_to_send, bounded; promotion criteria in `PROMOTION`; bounded email only on
+  `BOUNDED_SEND_CHANNELS`, with `<state>/templates/<id>.txt` and `<state>/segments/<id>.txt` pinned
+  by hash at grant; spend gated on the resulting daily budget) lives in gtm.py and is tested in
   `tests/test_sending.py` and `tests/test_authority.py`.
   All Python is **stdlib only** and runs with plain `python3` (3.9+), since it executes inside
   other people's repos.

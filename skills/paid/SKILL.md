@@ -1,6 +1,6 @@
 ---
 name: paid
-description: Run paid search and paid social for the product once a human turns the paid track on - read-only account audits first (structure, wasted search terms, conversion tracking that actually reaches PostHog and the ad platforms, CAC payback against the product's economics), competitor ad research through treg's ad libraries, creative from the creative skill, and budget or bid changes only as proposals unless a human granted bounded spend authority, and then always inside the daily cap and per-change limit enforced by gtm.py spend check. Use when the user asks about Google Ads, Meta, LinkedIn or other ads, ad spend, ROAS, CAC, search terms, "should we run ads", or "increase/decrease our ad budget"; and when gtm's focus or exploration lands on the paid track. creative makes the ads; measurement owns conversion tracking; channel fit decides whether paid is worth trying at all.
+description: Run paid search and paid social for the product once a human turns the paid track on - read-only account audits first (structure, wasted search terms, conversion tracking that actually reaches PostHog and the ad platforms, CAC payback against the product's economics), competitor ad research through treg's ad libraries, creative from the creative skill, and every change as a proposal, except that with bounded spend authority it may move an existing campaign's daily budget inside the cap, per-change limit and once-a-day limit enforced by gtm.py spend check. Use when the user asks about Google Ads, Meta, LinkedIn or other ads, ad spend, ROAS, CAC, search terms, "should we run ads", or "increase/decrease our ad budget"; and when gtm's focus or exploration lands on the paid track. creative makes the ads; measurement owns conversion tracking; channel fit decides whether paid is worth trying at all.
 ---
 
 # Paid
@@ -73,17 +73,21 @@ page, human approval. This skill never writes ad copy that skips the claims gate
 | authority on the channel (`gtm.py authority show`) | what the agent may do |
 |---|---|
 | `draft` (default) | propose: the change, the reason, the expected effect on payback, the bet it opens. A human makes it in the platform. |
-| `bounded` (a human ran `gtm.py authority grant paid_search --level bounded --daily-spend-cap 50 --max-change-pct 20 --quote "<their words>"`) | make the change itself, inside the caps, through the connected account |
+| `bounded` (a human ran `gtm.py authority grant paid_search --level bounded --daily-spend-cap 50 --max-change-pct 20 --quote "<their words>"` and `gtm.py track paid on --quote "<their words>"`) | change an existing campaign's daily budget itself, inside the caps, through the connected account |
 
 Under bounded authority, every change follows the same steps:
 
-1. `python3 ../gtm/scripts/gtm.py spend check <channel> --usd <what the change adds to today's spend> --change-pct <±%>`.
-   It adds that to what `spend log` already recorded today and compares with the daily cap.
-   Exit 3 means don't: the program is paused, the channel isn't bounded, the daily cap would be
-   passed, or the change is larger than the per-change limit. Put it in the digest instead.
+1. `python3 ../gtm/scripts/gtm.py spend check <channel> --current-daily-usd <today's daily budget> --new-daily-usd <the budget after the change>`.
+   Exit 3 means don't: the program is paused, the paid track is off, the channel isn't bounded, a
+   number isn't finite or is negative, the current budget is 0 (starting spend stays with the
+   human), the new budget is over `daily_spend_cap_usd` (the highest daily budget allowed), the
+   change is larger than `max_change_pct`, or the channel already had `max_changes_per_day`
+   (default 1) changes today. Put it in the digest instead.
 2. Make the change. Open a bet first (`gtm.py bet open`) with the payback metric and a check date at
    least one conversion cycle out.
-3. `python3 ../gtm/scripts/gtm.py spend log <channel> --usd <amount> --change-pct <±%> --note "<what changed>"`.
+3. `python3 ../gtm/scripts/gtm.py spend log <channel> --current-daily-usd <before> --new-daily-usd <after> --note "<what changed>"`.
+   `log` runs the same checks and refuses (exit 3) a change the gate wouldn't allow, so log right
+   after the check, before any other change.
 
 Also set the platform's own limits (account spend cap, campaign budgets) at or below the gtm caps,
 so a mistake outside this skill is capped too. Ad spend never draws on the treg budget.

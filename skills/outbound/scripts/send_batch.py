@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Send an approved batch of drafted emails from the dedicated sending inbox. Never sends a draft
-a human hasn't approved (or that changed since), never past the channel's daily cap, never to a
-suppressed address, never twice.
+"""Send a batch of drafted emails from the dedicated sending inbox. Sends only drafts a human approved
+(or, under bounded authority, drafts that are exactly an approved template sent to an approved
+segment), never past the channel's daily cap, never to a suppressed address, never twice.
 
     python3 send_batch.py BATCH_ID [--dry-run]
 
@@ -10,8 +10,12 @@ A batch is <state>/sends/<BATCH_ID>/drafts.jsonl, one draft per line:
      "channel": "outbound" | "citation_outreach" | "creators" | "lifecycle_email", "followup_of": null}
 `to` is one bare address. `key` (default: the address's domain) is what the cooldown counts.
 
-Under bounded authority (granted by a human after the promotion criteria are met), drafts that carry
-an approved `template` and `segment` go out without per-batch approval; others are skipped.
+Under bounded authority (granted by a human after the promotion criteria are met) a draft goes out
+without per-batch approval only if it is exactly its approved template (<state>/templates/<id>.txt)
+with short slot values filled from `slots`, to an address on its approved segment
+(<state>/segments/<id>.txt), both files unchanged since the grant; and never to anyone in
+replied.csv or named-accounts.csv. `pause` stops a batch before its next message; a complaint
+recorded with `gtm.py outcome` demotes the channel for the next batch.
 Otherwise approval comes from a human, applied with `gtm.py approve BATCH_ID --count N --quote "<their reply>"`:
 it pins the first N drafts by content hash, so editing, reordering or adding drafts afterwards
 unapproves them. Before each message this script checks the kill switch; for the batch it checks
@@ -135,6 +139,7 @@ def plan_batch(s: dict, drafts: list[dict], batch: str, channel: str) -> tuple[l
         if r.get("status") == "sent" and r.get("followup"):
             followups[r["to"]] = followups.get(r["to"], 0) + 1
     replied = _rows(gtm.R() / "replied.csv")
+    named = _rows(gtm.R() / "named-accounts.csv")
     sup = suppressed()
     plan, skipped, planned_addrs, planned_keys = [], [], set(), set()
     for i, d in enumerate(drafts):
@@ -146,8 +151,10 @@ def plan_batch(s: dict, drafts: list[dict], batch: str, channel: str) -> tuple[l
             why = "`to` must be exactly one bare address"
         elif level == "approve_to_send" and gtm.draft_hash(d) not in approved:
             why = "not approved (or changed since approval)"
-        elif level == "bounded" and gtm.bounded_draft_ok(s, channel, d):
-            why = gtm.bounded_draft_ok(s, channel, d)
+        elif level == "bounded" and gtm.bounded_draft_ok(s, channel, d, addr):
+            why = gtm.bounded_draft_ok(s, channel, d, addr)
+        elif level == "bounded" and (addr in replied or is_suppressed(addr, replied | named)):
+            why = "has replied before or is a named account: approve-to-send only"
         elif addr in unresolved:
             why = "an earlier attempt didn't finish; a human must check whether it went out"
         elif is_suppressed(addr, sup):
@@ -219,6 +226,9 @@ def run(a) -> int:
         print(f"a batch is one channel; found {sorted(channels)}", file=sys.stderr)
         return 1
     channel = channels.pop()
+    if channel not in gtm.SEND_CHANNELS:
+        print(f"{channel} isn't a sending channel", file=sys.stderr)
+        return 1
     plan, skipped = plan_batch(s, drafts, a.batch, channel)
     capacity, why = gtm.send_capacity(s, channel)
     if capacity <= 0:

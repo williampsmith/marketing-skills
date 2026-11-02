@@ -77,7 +77,7 @@ loads, with exact trigger settings, or as a PR to the ESP's templates repo if th
 - **Dunning is a service.** Say what failed and how to fix it in one click; never threaten.
 - **Referrals and reviews.** Incentives are disclosed in the request and in any resulting post or
   review; review requests go to everyone in the cohort, not only the happy ones (FTC rules on review
-  gating; confirm with counsel). Never write or seed reviews.
+  gating, checked 2026-11-02; confirm with counsel). Never write or seed reviews.
 - **Price, plans and data.** Discounts beyond what the team set, plan changes and anything that
   touches a user's data or billing are the human's call.
 
@@ -92,8 +92,10 @@ itself only on the `lifecycle_email` channel, and only through the sending-autho
   `../outbound/scripts/send_batch.py` with channel `lifecycle_email`, after the human approves the
   batch (`gtm.py approve <batch> --count N`). The sending address must be the one the team chose for
   user email (set `SMTP_FROM` accordingly); never the cold-outreach domain.
-- `bounded`: the same, without per-batch approval, only for an approved template and segment, after
-  the promotion criteria are met. A human grants it; the agent never does.
+- `bounded`: the same, without per-batch approval, for drafts that are exactly an approved template
+  (`<state>/templates/<id>.txt`) sent to an address on an approved segment
+  (`<state>/segments/<id>.txt`), after the promotion criteria are met. A human grants it; the agent
+  never does. See `../outbound/SKILL.md` "Bounded sending" for the file formats.
 
 ## 5. Measure and close
 

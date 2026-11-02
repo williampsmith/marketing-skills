@@ -28,8 +28,9 @@ Authority to send is earned per channel, in three steps.
 2. **Approve-to-send.** The human approves a batch (in the digest, "approve 1, 3", or on the review
    page) and the agent sends exactly those messages, unchanged. Follow-ups go out only inside a
    sequence the human approved, and stop on any reply.
-3. **Bounded.** Opt-in per channel. The agent sends without per-message approval, within daily caps,
-   to contacts matching an approved segment, using approved templates. It can be switched on only
+3. **Bounded.** Opt-in per channel (`outbound` and `lifecycle_email` only). The agent sends without
+   per-message approval, within daily caps, the exact text of an approved template to addresses on an
+   approved segment list. It can be switched on only
    after 30 days of approve-to-send in that channel with at least 50 sends, a reply rate of at least
    2% and no complaints (details below).
 
@@ -93,27 +94,42 @@ out of every bounded segment.
 | step | command | who |
 |---|---|---|
 | check eligibility | `gtm.py authority show` → `bounded_eligible` is `true` or the list of what's missing | anyone |
-| grant | `gtm.py authority grant <channel> --level bounded --template <id> --segment <id> [--daily-cap N] --quote "<their words>"` (repeat `--template`/`--segment` for more) | a human |
-| draft | every draft line carries an approved `template` and `segment`; others are skipped | the agent |
+| write | `<state>/templates/<id>.txt` (`Subject: …`, a `---` line, the body, `{{slot}}` marks) and `<state>/segments/<id>.txt` (one email or domain per line) | a human, or the agent drafts them for the human to approve |
+| grant | `gtm.py authority grant <channel> --level bounded --template <id> --segment <id> [--daily-cap N] --quote "<their words>"` (repeat `--template`/`--segment` for more); pins each file by hash | a human |
+| draft | each draft line names its `template` and `segment` and gives `slots`; its subject and body must be exactly the template filled with those slots (single-line values, at most 80 characters) and the address must be on the segment; anyone in `replied.csv` or `named-accounts.csv` is skipped | the agent |
 | send | `send_batch.py <batch> --dry-run`, then without it; no `gtm.py approve` needed | the agent |
 | outcomes | `gtm.py outcome <channel> --replies N --complaints N` after each batch's replies come in | the agent, from what the human reports or the inbox shows |
-| revoke | `gtm.py authority grant <channel> --level draft --quote "<their words>"` (or `approve_to_send`) | a human |
+| adjust | `gtm.py authority grant <channel> --level bounded …` on a channel already bounded: change caps, templates or segments without re-running promotion | a human |
+| revoke | `gtm.py authority grant <channel> --level draft` (or `approve_to_send`); no quote needed | anyone, any run |
 
-- **Promotion criteria** (`grant` refuses until all hold): at least 30 days at approve-to-send on that
-  channel, at least 50 messages sent since, a reply rate of at least 2%, and no complaints.
+- **Promotion criteria** (`grant` refuses until all hold): at least 30 days since the channel last
+  entered approve-to-send (`ats_since`), at least 50 messages sent since, a reply rate of at least 2%
+  (replies count at most once per send), and no complaints recorded since. `outcome --date` can't be
+  in the future, and complaints count by the day they were recorded, so a backdated complaint still
+  blocks promotion.
+- **Pinned files**: editing a granted template or segment breaks it until a human grants again.
 - **Caps still apply**: the daily cap, suppression, cooldowns and the kill switch, exactly as above.
 - **Any complaint demotes**: `gtm.py outcome … --complaints 1` drops the channel back to
-  approve-to-send at once and records the date. Only a human can grant bounded again.
+  approve-to-send, records the date and restarts the 30-day clock. Only a human can grant bounded
+  again. A complaint recorded while a batch is sending applies from the next batch; `gtm.py pause`
+  is the stop that takes effect mid-batch.
 
 ### Spend, as implemented (0.8)
 
-Channels `paid_search` and `paid_social`. At `draft` (the default) every budget or bid change is a
-proposal in the digest. A human can grant bounded spend:
-`gtm.py authority grant paid_search --level bounded --daily-spend-cap 50 --max-change-pct 20 --quote "<their words>"`.
+Channels `paid_search` and `paid_social` take only `draft` or `bounded`. At `draft` (the default)
+every budget or bid change is a proposal in the digest. A human can grant bounded spend and turn the
+paid track on:
+`gtm.py authority grant paid_search --level bounded --daily-spend-cap 50 --max-change-pct 20 [--max-changes-per-day 1] --quote "<their words>"`
+and `gtm.py track paid on --quote "<their words>"`.
 
-- Before each change: `gtm.py spend check <channel> --usd <added today> --change-pct <±%>`. Exit 3
-  means don't (paused, not bounded, over the daily cap, or a bigger change than allowed).
-- After it: `gtm.py spend log <channel> --usd <amount> --change-pct <±%> --note "<what>"`.
+- Before each change: `gtm.py spend check <channel> --current-daily-usd X --new-daily-usd Y`. It is
+  allowed only when the program isn't paused, the paid track is on, the channel is bounded, both
+  numbers are finite and not negative, X is above 0 (starting spend from zero stays with the human),
+  Y is at most `daily_spend_cap_usd` (the highest daily budget), the change |Y − X| / X is at most
+  `max_change_pct`, and the channel had fewer than `max_changes_per_day` (default 1) changes today.
+  Exit 3 means don't.
+- After it: `gtm.py spend log <channel> --current-daily-usd X --new-daily-usd Y --note "<what>"`.
+  `log` re-runs the same checks and refuses (exit 3) anything the gate wouldn't allow.
 - New campaigns, audiences and countries stay with the human, and platform-side caps are set at or
   below these.
 
@@ -121,8 +137,11 @@ proposal in the digest. A human can grant bounded spend:
 
 Granting, raising or widening any authority (sending, spend, caps, templates, segments) is a human
 decision. The agent never decides it. It runs `authority grant` only to apply a human's explicit
-instruction, and quotes their words, with the date, in plan.md. Lowering authority (back to `draft`)
-or pausing is always allowed when something looks wrong.
+instruction, and quotes their words, with the date, in plan.md. `gtm.py` enforces this: raising or
+widening needs `--quote` and is refused in unattended runs (`MARKETING_UNATTENDED`). Lowering
+authority (e.g. `--level draft`, no quote needed) and pausing are allowed in any run, whenever
+something looks wrong. Resuming after a pause is a human decision: `gtm.py resume` is refused in
+unattended runs.
 
 ## Always escalate
 
@@ -140,7 +159,8 @@ Stop that line of work and notify now, don't wait for the digest, when you see:
 `gtm.py pause --reason "<why>"` stops the program at once: it writes `<state>/PAUSED` without
 waiting for the lock, so it lands even mid-send. `tick` then returns no jobs and an alert, and
 `gtm.py may` refuses every action, so check `may` before anything that sends or contacts someone.
-`gtm.py resume` turns it back on. The human can also pause by replying "pause" to a digest; apply it
+`gtm.py resume` turns it back on, only in a run with the human present (refused when
+`MARKETING_UNATTENDED` is set). The human can also pause by replying "pause" to a digest; apply it
 first thing on the next run.
 
 ## Repetition and failure

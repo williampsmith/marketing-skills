@@ -230,15 +230,17 @@ Full rules: `references/guardrails.md` and `references/compliance.md`.
 | spend treg balance | yes, within `budget --need` and the per-run cap |
 | site changes, pages, robots.txt, schema, tracking code | **PR only**: a human merges |
 | outreach, posts, profile edits, any message to a person | **draft only**. Email on a channel a human granted approve-to-send (`gtm.py authority grant <channel> --level approve_to_send --quote …`): only the drafts a human approved, pinned by content (`gtm.py approve <batch> --count N --quote …`, both applied only with the human present), through `../outbound/scripts/send_batch.py`, which re-checks the kill switch before every message, caps, suppression and cooldowns. Posts and community replies are never sent by the agent. |
-| email on a channel with **bounded** authority (`gtm.py authority show`) | only drafts carrying an approved `template` and `segment`, through `send_batch.py`, inside the daily cap; record replies and complaints with `gtm.py outcome`; any complaint demotes the channel |
-| ad budget or bid changes | **propose** by default. With bounded spend authority: `gtm.py spend check` first (exit 3 = don't), then the change, then `gtm.py spend log`; new campaigns, audiences or countries stay with the human |
+| email on a channel with **bounded** authority (`gtm.py authority show`; `outbound` and `lifecycle_email` only) | only drafts that are exactly a pinned template (`<state>/templates/<id>.txt`) with its slots filled, to addresses on a pinned segment (`<state>/segments/<id>.txt`), never to anyone in replied.csv or named-accounts.csv, through `send_batch.py`, inside the daily cap; record replies and complaints with `gtm.py outcome`; any complaint demotes the channel and restarts its clock |
+| ad budget changes | **propose** by default. With bounded spend authority and the paid track on: `gtm.py spend check <channel> --current-daily-usd X --new-daily-usd Y` first (exit 3 = don't), then the change, then `gtm.py spend log` with the same numbers; budgets stay under the daily cap, move at most the per-change limit and once a day; starting spend from zero, new campaigns, audiences or countries stay with the human |
 | grant, raise or widen any authority, turn on the paid track | **never** on your own; apply only a human's explicit instruction, quoted in plan.md |
 | change the profile, overrides, floors, panel, budget, cadence | **propose** in the digest; apply after a human says yes |
 | delete or overwrite anything outside `<state>` | **never** unattended |
 
 Stop and notify, don't continue, when: an access regression appears, the budget is exhausted, the
 tree is dirty or a pull fails, a claim is ambiguous, anything legal, medical or financial needs claim
-sign-off, or `tick` reports ESCALATE. `gtm.py pause` is the kill switch; a human resumes.
+sign-off, or `tick` reports ESCALATE. `gtm.py pause` is the kill switch; a human resumes (`resume` is
+refused in unattended runs). Lowering any authority (`authority grant <channel> --level draft`) is
+allowed in any run.
 
 ## Digest
 

@@ -29,7 +29,7 @@ experiment results.
     python3 gtm.py authority show | grant CHANNEL --level approve_to_send [--daily-cap 20]
     python3 gtm.py approve BATCH --count N --quote "..."   # a human approved the first N drafts
     python3 gtm.py outcome CHANNEL --replies N --complaints N
-    python3 gtm.py spend check|log paid_search --usd 30 [--change-pct 15]
+    python3 gtm.py spend check|log paid_search --current-daily-usd 40 --new-daily-usd 46
     python3 gtm.py track paid on --quote "..."
     python3 gtm.py pause [--reason R] | resume   # kill switch
     python3 gtm.py digest                        # data half of digests/<date>.md
@@ -48,6 +48,7 @@ import datetime as dt
 import json
 import os
 import random
+import re
 import shutil
 import sys
 import tempfile
@@ -1626,21 +1627,80 @@ def send_capacity(s: dict, channel: str) -> tuple[int, str]:
     return left, f"{left} of {auth['daily_cap']} left today"
 
 
-def bounded_draft_ok(s: dict, channel: str, draft: dict) -> str | None:
-    """Why a draft can't go out under bounded authority (None when it can)."""
+RANK = {"draft": 0, "approve_to_send": 1, "bounded": 2}
+BOUNDED_SEND_CHANNELS = ("outbound", "lifecycle_email")  # press, editors and creators stay approve-to-send
+SLOT = re.compile(r"\{\{(\w+)\}\}")
+MAX_SLOT_CHARS = 80
+
+
+def _sha(path: Path) -> str | None:
+    import hashlib
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
+
+
+def template_path(tid: str) -> Path:
+    return R() / "templates" / f"{tid}.txt"
+
+
+def segment_path(sid: str) -> Path:
+    return R() / "segments" / f"{sid}.txt"
+
+
+def render_template(text: str, slots: dict) -> tuple[str, str] | None:
+    """A template file is `Subject: …`, a line `---`, then the body; `{{name}}` marks a slot."""
+    head, sep, body = text.partition("\n---\n")
+    if not sep or not head.startswith("Subject:"):
+        return None
+    try:
+        fill = lambda t: SLOT.sub(lambda m: str(slots[m.group(1)]), t)  # noqa: E731
+        return fill(head[len("Subject:"):].strip()), fill(body).rstrip()
+    except KeyError:
+        return None
+
+
+def in_segment(addr: str, members: set) -> bool:
+    parts = addr.rsplit("@", 1)[-1].split(".")
+    return addr in members or any(".".join(parts[i:]) in members for i in range(len(parts) - 1))
+
+
+def bounded_draft_ok(s: dict, channel: str, draft: dict, addr: str | None = None) -> str | None:
+    """Why a draft can't go out under bounded authority (None when it can). The draft must be its
+    approved template with only the slots filled (short, single-line values), sent to someone on its
+    approved segment list; both files must still match the hashes pinned when a human granted bounded."""
     auth = authority(s, channel)
-    if draft.get("template") not in auth.get("templates", []):
-        return f"template {draft.get('template')!r} isn't approved for bounded sending on {channel}"
-    if draft.get("segment") not in auth.get("segments", []):
-        return f"segment {draft.get('segment')!r} isn't approved for bounded sending on {channel}"
+    tid, sid = draft.get("template"), draft.get("segment")
+    tpl_hash = (auth.get("templates") or {}).get(tid) if isinstance(auth.get("templates"), dict) else None
+    seg_hash = (auth.get("segments") or {}).get(sid) if isinstance(auth.get("segments"), dict) else None
+    if not tpl_hash:
+        return f"template {tid!r} isn't approved for bounded sending on {channel}"
+    if not seg_hash:
+        return f"segment {sid!r} isn't approved for bounded sending on {channel}"
+    if _sha(template_path(tid)) != tpl_hash:
+        return f"template {tid!r} changed since a human approved it"
+    if _sha(segment_path(sid)) != seg_hash:
+        return f"segment {sid!r} changed since a human approved it"
+    slots = draft.get("slots") or {}
+    if not isinstance(slots, dict) or any(not isinstance(v, str) or "\n" in v or len(v) > MAX_SLOT_CHARS
+                                          for v in slots.values()):
+        return f"slot values must be single lines of at most {MAX_SLOT_CHARS} characters"
+    rendered = render_template(template_path(tid).read_text(), slots)
+    if rendered is None:
+        return f"template {tid!r} can't be filled from the draft's slots"
+    if (draft.get("subject", "").strip(), draft.get("body", "").rstrip()) != rendered:
+        return "the draft isn't exactly its template with the slots filled"
+    members = {l.strip().lower() for l in segment_path(sid).read_text().splitlines()
+               if l.strip() and not l.startswith("#")}
+    if addr and not in_segment(addr, members):
+        return f"recipient isn't on segment {sid!r}"
     return None
 
 
 def outcomes(channel: str, since: str | None = None) -> dict:
+    """Sends and outcomes recorded since a date (by when they were recorded). Replies never exceed sends."""
     rows = [r for r in read_jsonl(R() / "outcomes.jsonl")
-            if r["channel"] == channel and (not since or r["date"] >= since)]
+            if r["channel"] == channel and (not since or r.get("recorded", r["date"]) >= since)]
     sent = sum(int(r["n"]) for r in send_log() if r["channel"] == channel and (not since or r["date"] >= since))
-    replies = sum(int(r.get("replies", 0)) for r in rows)
+    replies = min(sum(int(r.get("replies", 0)) for r in rows), sent)
     complaints = sum(int(r.get("complaints", 0)) for r in rows)
     return {"sent": sent, "replies": replies, "complaints": complaints,
             "reply_rate": round(replies / sent, 4) if sent else None}
@@ -1648,13 +1708,16 @@ def outcomes(channel: str, since: str | None = None) -> dict:
 
 def promotion_check(s: dict, channel: str) -> tuple[bool, list[str]]:
     auth = authority(s, channel)
-    if auth["level"] != "approve_to_send" or not auth.get("granted"):
+    if channel not in BOUNDED_SEND_CHANNELS:
+        return False, [f"{channel} stays at approve_to_send (press, editors and creators are never bounded)"]
+    since = auth.get("ats_since") or auth.get("granted")
+    if auth["level"] != "approve_to_send" or not since:
         return False, [f"{channel} must run at approve_to_send first (now {auth['level']})"]
     why = []
-    days = (today() - _date(auth["granted"])).days
+    days = (today() - _date(since)).days
     if days < PROMOTION["min_days"]:
         why.append(f"{days} days at approve_to_send (needs {PROMOTION['min_days']})")
-    o = outcomes(channel, since=auth["granted"])
+    o = outcomes(channel, since=since)
     if o["sent"] < PROMOTION["min_sends"]:
         why.append(f"{o['sent']} sends (needs {PROMOTION['min_sends']})")
     if o["reply_rate"] is None or o["reply_rate"] < PROMOTION["min_reply_rate"]:
@@ -1664,25 +1727,41 @@ def promotion_check(s: dict, channel: str) -> tuple[bool, list[str]]:
     return not why, why
 
 
-def spend_allowed(s: dict, channel: str, usd: float, change_pct: float | None = None) -> tuple[bool, str]:
-    """Paid changes are proposals unless bounded spend authority was granted; then within caps."""
+def _finite(*xs) -> bool:
+    import math
+    return all(isinstance(x, (int, float)) and math.isfinite(x) for x in xs)
+
+
+def spend_changes_today(channel: str) -> list[dict]:
+    d = today().isoformat()
+    return [r for r in read_jsonl(R() / "ad-spend.jsonl") if r["channel"] == channel and r["date"] == d]
+
+
+def spend_allowed(s: dict, channel: str, new_daily: float, current_daily: float) -> tuple[bool, str]:
+    """A change to a channel's daily budget. Proposals for a human unless bounded spend authority was
+    granted; then the new daily budget stays under the cap, moves at most max_change_pct from the
+    current one, never starts from zero, and only max_changes_per_day times a day."""
     if paused():
         return False, "paused"
     if not s["tracks"].get("paid", {}).get("enabled"):
         return False, "the paid track is off"
     auth = authority(s, channel)
     if auth.get("level") != "bounded":
-        return False, f"{channel} spend changes are proposals for a human unless bounded authority was granted"
-    if usd < 0:
-        return False, "usd is the spend this change adds today (0 or more)"
-    spent = sum(float(r["usd"]) for r in read_jsonl(R() / "ad-spend.jsonl")
-                if r["channel"] == channel and r["date"] == today().isoformat())
-    cap = float(auth.get("daily_spend_cap_usd", 0))
-    if spent + usd > cap:
-        return False, f"${spent + usd:.2f} today would pass {channel}'s daily cap of ${cap:.2f}"
-    max_change = float(auth.get("max_change_pct", 20))
-    if change_pct is not None and abs(change_pct) > max_change:
-        return False, f"a {change_pct:+.0f}% budget change is over the {max_change:.0f}% per-change limit"
+        return False, f"{channel} budget changes are proposals for a human unless bounded authority was granted"
+    cap = auth.get("daily_spend_cap_usd")
+    max_change = auth.get("max_change_pct", 20)
+    per_day = auth.get("max_changes_per_day", 1)
+    if not _finite(new_daily, current_daily, cap, max_change, per_day) or new_daily < 0 or current_daily < 0:
+        return False, "budgets, caps and limits must be finite, non-negative numbers"
+    if current_daily == 0:
+        return False, "starting spend from zero (a new campaign, audience or country) stays with the human"
+    if new_daily > cap:
+        return False, f"a ${new_daily:.2f} daily budget is over {channel}'s cap of ${cap:.2f}"
+    change = abs(new_daily - current_daily) / current_daily * 100
+    if change > max_change:
+        return False, f"a {change:.0f}% change is over the {max_change:.0f}% per-change limit"
+    if len(spend_changes_today(channel)) >= per_day:
+        return False, f"{channel} already had {per_day} budget change(s) today"
     return True, "ok"
 
 
@@ -1706,20 +1785,17 @@ def unattended_refusal(what: str) -> str | None:
 def cmd_authority(a) -> int:
     s = load_state()
     if a.action == "show":
-        out = {ch: authority(s, ch) for ch in SEND_CHANNELS + SPEND_CHANNELS}
-        for ch in SEND_CHANNELS:
-            if out[ch]["level"] == "approve_to_send":
+        out = {}
+        for ch in SEND_CHANNELS + SPEND_CHANNELS:
+            auth = authority(s, ch)
+            if ch in SPEND_CHANNELS:
+                auth = {k: v for k, v in auth.items() if k not in ("daily_cap", "cooldown_days")}
+            elif ch in BOUNDED_SEND_CHANNELS and auth["level"] == "approve_to_send":
                 ok, why = promotion_check(s, ch)
-                out[ch]["bounded_eligible"] = True if ok else why
+                auth["bounded_eligible"] = True if ok else why
+            out[ch] = auth
         print(json.dumps(out, indent=2))
         return 0
-    why = unattended_refusal("granting authority")
-    if why:
-        print(why, file=sys.stderr)
-        return 1
-    if not a.quote:
-        print("--quote the human's instruction (it is stored with the grant)", file=sys.stderr)
-        return 1
     if a.channel in SPEND_CHANNELS:
         levels = SPEND_LEVELS
     elif a.channel in SEND_CHANNELS:
@@ -1730,22 +1806,60 @@ def cmd_authority(a) -> int:
     if a.level not in levels:
         print(f"{a.channel} takes one of {', '.join(levels)}", file=sys.stderr)
         return 1
-    if a.level == "bounded" and a.channel in SEND_CHANNELS:
-        ok, why = promotion_check(s, a.channel)
-        if not ok:
-            print("not eligible for bounded sending yet: " + "; ".join(why), file=sys.stderr)
+    cur = authority(s, a.channel)
+    widening = any(v is not None for v in (a.daily_cap, a.cooldown_days, a.template, a.segment,
+                                            a.daily_spend_cap, a.max_change_pct, a.max_changes_per_day))
+    lowering = RANK[a.level] < RANK.get(cur.get("level"), 0) and not widening
+    if not lowering:  # lowering is always allowed, by anyone, at once
+        why = unattended_refusal("granting authority")
+        if why:
+            print(why, file=sys.stderr)
             return 1
-        if not a.template or not a.segment:
+        if not a.quote:
+            print("--quote the human's instruction (it is stored with the grant)", file=sys.stderr)
+            return 1
+    if a.level == "bounded" and a.channel in SEND_CHANNELS:
+        if a.channel not in BOUNDED_SEND_CHANNELS:
+            print(f"{a.channel} stays at approve_to_send: press, editors and creators are never bounded",
+                  file=sys.stderr)
+            return 1
+        if cur.get("level") != "bounded":
+            ok, why = promotion_check(s, a.channel)
+            if not ok:
+                print("not eligible for bounded sending yet: " + "; ".join(why), file=sys.stderr)
+                return 1
+        templates = dict(cur.get("templates") or {}) if isinstance(cur.get("templates"), dict) else {}
+        segments = dict(cur.get("segments") or {}) if isinstance(cur.get("segments"), dict) else {}
+        for tid in a.template or []:
+            h = _sha(template_path(tid))
+            if not h or render_template(template_path(tid).read_text(), {k: "x" for k in
+                                        SLOT.findall(template_path(tid).read_text())}) is None:
+                print(f"{template_path(tid)} must exist as `Subject: …`, `---`, body, with {{{{slot}}}} marks",
+                      file=sys.stderr)
+                return 1
+            templates[tid] = h
+        for sid in a.segment or []:
+            h = _sha(segment_path(sid))
+            if not h:
+                print(f"{segment_path(sid)} must exist: one email or domain per line", file=sys.stderr)
+                return 1
+            segments[sid] = h
+        if not templates or not segments:
             print("bounded sending needs at least one --template and one --segment", file=sys.stderr)
             return 1
-    if a.level == "bounded" and a.channel in SPEND_CHANNELS and not a.daily_spend_cap:
-        print("bounded spend needs --daily-spend-cap", file=sys.stderr)
-        return 1
-    cur = authority(s, a.channel)
-    cur.update({"level": a.level, "granted": today().isoformat(), "quote": a.quote})
-    for key, val in (("daily_cap", a.daily_cap), ("cooldown_days", a.cooldown_days), ("templates", a.template),
-                     ("segments", a.segment), ("daily_spend_cap_usd", a.daily_spend_cap),
-                     ("max_change_pct", a.max_change_pct)):
+        cur["templates"], cur["segments"] = templates, segments
+    if a.level == "bounded" and a.channel in SPEND_CHANNELS:
+        if a.daily_spend_cap is None and cur.get("daily_spend_cap_usd") is None:
+            print("bounded spend needs --daily-spend-cap (the highest daily budget allowed)", file=sys.stderr)
+            return 1
+    if cur.get("level") != a.level:
+        cur["level_since"] = today().isoformat()
+        if a.level == "approve_to_send":
+            cur["ats_since"] = today().isoformat()
+    cur.update({"level": a.level, "granted": today().isoformat(), "quote": a.quote or "lowered"})
+    for key, val in (("daily_cap", a.daily_cap), ("cooldown_days", a.cooldown_days),
+                     ("daily_spend_cap_usd", a.daily_spend_cap), ("max_change_pct", a.max_change_pct),
+                     ("max_changes_per_day", a.max_changes_per_day)):
         if val is not None:
             cur[key] = val
     s.setdefault("authority", {})[a.channel] = cur
@@ -1755,19 +1869,29 @@ def cmd_authority(a) -> int:
 
 
 def cmd_outcome(a) -> int:
-    """Record replies and complaints on a sending channel. Any complaint demotes bounded authority."""
+    """Record replies and complaints on a sending channel. Any complaint demotes bounded authority and
+    restarts the approve-to-send clock."""
     if a.channel not in SEND_CHANNELS:
         print(f"channel is one of {', '.join(SEND_CHANNELS)}", file=sys.stderr)
         return 1
     if a.replies < 0 or a.complaints < 0:
         print("replies and complaints are counts", file=sys.stderr)
         return 1
-    append_jsonl(R() / "outcomes.jsonl", {"date": a.date or today().isoformat(), "channel": a.channel,
-                                          "replies": a.replies, "complaints": a.complaints})
+    try:
+        d = _date(a.date) if a.date else today()
+    except ValueError:
+        print("--date is YYYY-MM-DD", file=sys.stderr)
+        return 1
+    if d > today():
+        print("--date can't be in the future", file=sys.stderr)
+        return 1
+    append_jsonl(R() / "outcomes.jsonl", {"date": d.isoformat(), "recorded": today().isoformat(),
+                                          "channel": a.channel, "replies": a.replies, "complaints": a.complaints})
     s = load_state()
     if a.complaints and authority(s, a.channel)["level"] == "bounded":
-        s["authority"][a.channel]["level"] = "approve_to_send"
-        s["authority"][a.channel]["demoted"] = today().isoformat()
+        cur = s["authority"][a.channel]
+        cur.update({"level": "approve_to_send", "demoted": today().isoformat(), "ats_since": today().isoformat(),
+                    "level_since": today().isoformat()})
         save_state(s)
         print(f"{a.channel}: complaint recorded; demoted to approve_to_send until a human re-grants bounded",
               file=sys.stderr)
@@ -1776,18 +1900,22 @@ def cmd_outcome(a) -> int:
 
 
 def cmd_spend(a) -> int:
-    """Gate (`check`, exit 3 = don't) and log (`log`) ad spend changes."""
+    """Gate (`check`, exit 3 = don't) and record (`log`, which re-checks) a change to a daily budget."""
     s = load_state()
     if a.channel not in SPEND_CHANNELS:
         print(f"channel is one of {', '.join(SPEND_CHANNELS)}", file=sys.stderr)
         return 1
+    ok, why = spend_allowed(s, a.channel, a.new_daily_usd, a.current_daily_usd)
+    if not ok:
+        print(why, file=sys.stderr if a.action == "log" else sys.stdout)
+        return 3
     if a.action == "check":
-        ok, why = spend_allowed(s, a.channel, a.usd, a.change_pct)
         print(why)
-        return 0 if ok else 3
-    append_jsonl(R() / "ad-spend.jsonl", {"date": today().isoformat(), "channel": a.channel, "usd": a.usd,
-                                          "change_pct": a.change_pct, "note": a.note})
-    print(f"logged ${a.usd:.2f} on {a.channel}")
+        return 0
+    append_jsonl(R() / "ad-spend.jsonl", {"date": today().isoformat(), "channel": a.channel,
+                                          "from_daily_usd": a.current_daily_usd, "to_daily_usd": a.new_daily_usd,
+                                          "note": a.note})
+    print(f"logged {a.channel}: ${a.current_daily_usd:.2f} → ${a.new_daily_usd:.2f} a day")
     return 0
 
 
@@ -1848,6 +1976,10 @@ def cmd_pause(a) -> int:
 
 
 def cmd_resume(a) -> int:
+    why = unattended_refusal("resuming after a pause")
+    if why:
+        print(why, file=sys.stderr)
+        return 1
     (R() / "PAUSED").unlink(missing_ok=True)
     s = load_state()
     s["paused"] = False
@@ -2032,6 +2164,14 @@ def cmd_migrate(a) -> int:
     return 0
 
 
+def finite_float(x: str) -> float:
+    import math
+    v = float(x)
+    if not math.isfinite(v):
+        raise argparse.ArgumentTypeError(f"{x!r} isn't a finite number")
+    return v
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -2070,20 +2210,23 @@ def main() -> int:
     p.add_argument("--daily-cap", type=int)
     p.add_argument("--cooldown-days", type=int)
     p.add_argument("--quote", help="the human's instruction, verbatim (required to grant)")
-    p.add_argument("--template", action="append", help="bounded sending: an approved template id; repeatable")
-    p.add_argument("--segment", action="append", help="bounded sending: an approved segment id; repeatable")
-    p.add_argument("--daily-spend-cap", type=float, help="paid channels: USD per day")
-    p.add_argument("--max-change-pct", type=float, help="paid channels: largest budget change per step")
+    p.add_argument("--template", action="append",
+                   help="bounded sending: id of <state>/templates/<id>.txt to pin by hash; repeatable")
+    p.add_argument("--segment", action="append",
+                   help="bounded sending: id of <state>/segments/<id>.txt (emails or domains) to pin; repeatable")
+    p.add_argument("--daily-spend-cap", type=finite_float, help="paid channels: the highest daily budget, USD")
+    p.add_argument("--max-change-pct", type=finite_float, help="paid channels: largest change per step, percent")
+    p.add_argument("--max-changes-per-day", type=int, help="paid channels: budget changes allowed a day (default 1)")
     p = sub.add_parser("outcome", help="record replies and complaints on a sending channel")
     p.add_argument("channel")
     p.add_argument("--replies", type=int, default=0)
     p.add_argument("--complaints", type=int, default=0)
     p.add_argument("--date")
-    p = sub.add_parser("spend", help="gate (check) and log (log) ad spend changes")
+    p = sub.add_parser("spend", help="gate (check) and record (log) a change to a channel's daily budget")
     p.add_argument("action", choices=["check", "log"])
     p.add_argument("channel")
-    p.add_argument("--usd", type=float, required=True, help="spend this change adds today")
-    p.add_argument("--change-pct", type=float)
+    p.add_argument("--current-daily-usd", type=finite_float, required=True, help="today's daily budget")
+    p.add_argument("--new-daily-usd", type=finite_float, required=True, help="the daily budget after the change")
     p.add_argument("--note", default="")
     p = sub.add_parser("track", help="turn a track on or off")
     p.add_argument("track", choices=TRACKS)

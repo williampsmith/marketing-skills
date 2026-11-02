@@ -137,13 +137,26 @@ When `gtm.py authority show` reports `bounded_eligible: true` for the channel, s
 with the numbers; never grant it yourself. Once a human grants it
 (`gtm.py authority grant outbound --level bounded --template <id> --segment <id> --quote "<their words>"`):
 
-- Templates and segments are the approved ones, by id. A template is a message with fixed claims and
-  structure (personalisation only in marked slots); a segment is an ICP slice written in plan.md.
-- Every draft line carries `"template"` and `"segment"`; `send_batch.py` skips any that don't match
-  the allowlist, and sends the rest without `gtm.py approve`, still inside the daily cap,
-  suppression and cooldowns.
+- Bounded sending exists only on `outbound` and `lifecycle_email`. Press, editors and creators stay
+  at approve-to-send.
+- **Templates** are files the human approves: `<state>/templates/<id>.txt`, a `Subject: …` line, a
+  line `---`, then the body. `{{name}}` marks a slot, e.g. `{{first_name}}`, `{{company}}`.
+- **Segments** are files too: `<state>/segments/<id>.txt`, one email or domain per line (a domain
+  covers its subdomains).
+- The grant pins each file by hash. Editing a template or segment afterwards makes every draft that
+  uses it fail until a human grants again.
+- A draft line carries `"template"`, `"segment"` and `"slots"` (e.g.
+  `{"first_name": "Ana", "company": "Acme"}`), and its `subject` and `body` must be exactly the
+  template with those slots filled. Slot values are single lines of at most 80 characters, so all
+  the substance stays in the approved text.
+- `send_batch.py` sends a draft without `gtm.py approve` only if it renders exactly from its
+  template, the address is on its segment, and the address or domain isn't in `replied.csv` or
+  `<state>/named-accounts.csv`. Everything else (daily cap, suppression, cooldowns, follow-up rules,
+  kill switch) still applies.
 - After replies come in, record them: `gtm.py outcome outbound --replies N --complaints N`. One
-  complaint drops the channel back to approve-to-send.
+  complaint drops the channel back to approve-to-send and restarts its 30-day clock. A complaint
+  recorded while a batch is sending takes effect for the next batch; `gtm.py pause` stops the
+  current one before its next message.
 
 ## 5. Replies and stopping
 

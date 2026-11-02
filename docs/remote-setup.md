@@ -122,12 +122,29 @@ plan.md; it never decides this on its own.
 | when | command |
 |---|---|
 | the first batches look right and the sending inbox is set up | `gtm.py authority grant outbound --level approve_to_send --daily-cap 20 --quote "<their words>"` |
-| `gtm.py authority show` reports `bounded_eligible: true` (30 days, 50 sends, 2% replies, no complaints) and you've approved the templates and segments | `gtm.py authority grant outbound --level bounded --template t1 --segment s1 --quote "<their words>"` |
-| you want the agent to adjust ad budgets itself (paid track on: `gtm.py track paid on --quote "<their words>"`) | `gtm.py authority grant paid_search --level bounded --daily-spend-cap 50 --max-change-pct 20 --quote "<their words>"`; set the same or lower caps in the ad platform |
+| `gtm.py authority show` reports `bounded_eligible: true` (30 days, 50 sends, 2% replies, no complaints) and you've approved the template and segment files (below) | `gtm.py authority grant outbound --level bounded --template t1 --segment s1 --quote "<their words>"` |
+| you want the agent to adjust existing campaigns' daily budgets itself | `gtm.py track paid on --quote "<their words>"` and `gtm.py authority grant paid_search --level bounded --daily-spend-cap 50 --max-change-pct 20 --quote "<their words>"`; set the same or lower caps in the ad platform |
 
-To take authority back: `gtm.py authority grant <channel> --level draft --quote "<their words>"`. To stop everything at once:
-`gtm.py pause --reason "…"` (or reply "pause"). A single complaint on a bounded email channel drops it
-back to approve-to-send on its own.
+Bounded email sends only text you approved, to people you listed. Before granting, write (or review
+the agent's draft of) two files in the state store:
+
+- `<state>/templates/t1.txt`: a `Subject: …` line, a line `---`, then the body. Mark the parts that
+  change per person with `{{first_name}}`-style slots; slot values are limited to one short line.
+- `<state>/segments/s1.txt`: the email addresses or domains this template may go to, one per line.
+
+The grant pins both files by hash. Editing either one stops bounded sends from it until you grant
+again. Bounded is available only on `outbound` and `lifecycle_email`; editor and creator pitches
+stay at approve-to-send. Re-running the grant on a bounded channel adjusts its caps, templates or
+segments.
+
+Bounded spend changes only the daily budget of campaigns that already spend: the new budget stays at
+or under `--daily-spend-cap`, moves at most `--max-change-pct` from the current one, and at most
+`--max-changes-per-day` (default 1) times a day. Starting spend from zero stays with you.
+
+To take authority back: `gtm.py authority grant <channel> --level draft` (no quote needed; any run
+may lower authority). To stop everything at once: `gtm.py pause --reason "…"` (or reply "pause");
+only a session with you present can `gtm.py resume`. A single complaint on a bounded email channel
+drops it back to approve-to-send on its own and restarts its 30-day clock.
 
 ## 6. Operating it
 

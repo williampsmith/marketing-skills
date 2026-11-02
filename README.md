@@ -109,11 +109,14 @@ channel up (`gtm.py authority`):
 1. **Draft** (every channel starts here): the agent writes; a human sends, posts or changes spend.
 2. **Approve-to-send** (email channels): the agent sends exactly the batch a human approved, within
    a daily cap, to no suppressed address and no one inside a cooldown.
-3. **Bounded**: the agent sends approved templates to approved segments without per-batch approval,
-   or changes ad spend inside a daily cap and a per-change limit. Email needs 30 days at
-   approve-to-send, 50 sends, a 2% reply rate and no complaints first; one complaint drops it back.
+3. **Bounded**: the agent sends the exact text of a template the human approved, to addresses on a
+   list the human approved, without per-batch approval (cold and user email only; editor and creator
+   pitches never). Or it moves an existing campaign's daily budget inside a cap, a per-change limit
+   and once a day. Email needs 30 days at approve-to-send, 50 sends, a 2% reply rate and no
+   complaints first; one complaint drops it back.
 
-`gtm.py pause` stops everything at once. Posts and community replies are always sent by a human.
+Lowering authority and `gtm.py pause` work in any run and stop things at once; only a human raises
+authority or resumes. Posts and community replies are always sent by a human.
 
 ## Install
 
