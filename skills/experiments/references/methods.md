@@ -5,7 +5,10 @@ How each method in `../SKILL.md` works, when it breaks, and how it closes in `gt
 ## Sizing
 
 `stats.py size --baseline B --mde M` gives visitors per arm for a two-sided test at 95% confidence
-and 80% power. `stats.py days … --daily D --arms 2` divides by the traffic. Rules of thumb:
+and 80% power. `stats.py days … --daily D --arms 2` divides by the traffic and rounds up to whole
+weeks. With more than two arms it splits alpha across the comparisons with control (Bonferroni), so
+each arm needs more visitors. It refuses a lift the rate can't reach (baseline × (1 + mde) ≥ 1).
+Rules of thumb:
 
 | baseline rate | relative lift | per arm |
 |---|---|---|
@@ -21,11 +24,19 @@ Low baselines and small lifts need far more traffic than most early products hav
 
 - Assignment by a PostHog feature flag on a stable user id (or the anonymous id for logged-out
   pages). Exposure is the first time the flagged code runs, not the page view before it.
-- Primary metric: the bet's `--metric`, counted per exposed user. Guardrails: errors, the next
-  funnel stage, refunds or cancellations where relevant.
-- Sample ratio mismatch: with a 50/50 split, arms more than about 2-3% apart after a few thousand
-  users usually mean a bug (caching, bots, a redirect in one arm). Don't analyse it; fix and restart.
-- Close: `gtm.py bet close <id> --a N:X --b N:X --source "PostHog experiment <name>"`.
+- Primary metric: the bet's `--metric` (a `rate:<stage>` for conversion), counted per exposed
+  user. Guardrails: errors, the next funnel stage, refunds or cancellations where relevant.
+- Check date: the expected launch date plus `stats.py days`. The bet stays open until exposures
+  reach the planned `per_arm`.
+- Sample ratio mismatch: test the split with `stats.py srm --a N --b N [--split 0.5]`, a chi-square
+  test that flags `mismatch` at p < 0.001. Small gaps are normal noise (1,020 vs 980 has p ≈ 0.37);
+  4,000 vs 4,600 is a bug (caching, bots, a redirect in one arm). On a mismatch, don't analyse it:
+  fix the cause, close the bet with `--force --void "SRM: <cause>"` and open a new one.
+- Close: `gtm.py bet close <id> --a N:X --b N:X --min-n <per_arm> --source "PostHog experiment <name>"`.
+  The result compares the arms (variant minus control). Small counts or fewer than `--min-n` per
+  arm read as inconclusive.
+- Stopped on a guardrail breach: `gtm.py bet close <id> --force --void "<reason>"`. A void bet has
+  no result and isn't counted in fit or learnings.
 
 ## Holdout (`--method holdout`)
 
@@ -52,6 +63,8 @@ own. Use it only when nothing else fits, and say so.
 
 ## Reading a result
 
+- The comparison is variant against control in the same window, never against the baseline the
+  bet was opened with.
 - p < 0.05 with the predicted sign: won. Ship it.
 - p < 0.05, wrong sign: lost. Revert, and write down what you believed that wasn't true.
 - p ≥ 0.05: inconclusive. Not a loss. Keep the simpler version and move on; don't extend the test

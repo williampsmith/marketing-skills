@@ -24,7 +24,10 @@ Start from the rate the change should move and the visitors it will see per day 
 python3 scripts/stats.py days --baseline 0.03 --mde 0.20 --daily 400
 ```
 
-`--mde` is the relative lift worth detecting (0.20 = +20%). Read `run_it`:
+`--mde` is the relative lift worth detecting (0.20 = +20%). `days` rounds up to whole weeks
+(weekdays and weekends behave differently) and splits alpha across the comparisons when `--arms`
+is above 2. It refuses a lift the rate can't reach (baseline × (1 + mde) must stay below 1).
+Keep `per_arm` from the output: the close needs it. Read `run_it`:
 
 | situation | method (`--method` on the bet) |
 |---|---|
@@ -43,14 +46,19 @@ Open the bet before any code ships (gtm work_session step 3):
 
 ```
 gtm.py bet open --id 2026-11-20-pricing-cta --track conversion --channel on_site --tactic page_cro \
-  --hypothesis "One plan-picker CTA lifts visit→signup" --metric stage:signup --baseline 0.031 \
+  --hypothesis "One plan-picker CTA lifts visit→signup" --metric rate:signup --baseline 0.031 \
   --expected 0.037 --method ab --check 2026-12-18
 ```
 
+- Conversion bets use `rate:<stage>` metrics (e.g. `rate:signup`, the conversion into that stage,
+  written by `../measurement`'s pull). `stage:<id>` metrics are 28-day counts, and `bet open`
+  refuses a rate-like baseline on them.
 - One primary metric, written in the bet. It is the only one that decides won or lost.
 - Name 1-2 guardrail metrics in the hypothesis (e.g. activation rate, refunds, page errors). A
   win that breaks a guardrail is reported as a loss to investigate, never shipped silently.
-- The check date comes from `stats.py days`, not from when the result looks good.
+- The check date is the expected launch date (when a human merges the flagged PR) plus
+  `stats.py days`, not the day the bet opens and not the day the result looks good. If exposures
+  haven't reached `per_arm` by then, the bet stays open and due; don't close early on a lucky p.
 
 ## 3. Wire the flag (A/B only)
 
@@ -65,10 +73,13 @@ gtm.py bet open --id 2026-11-20-pricing-cta --track conversion --channel on_site
 ## 4. While it runs
 
 - **No peeking.** Don't stop early on a good or bad day. The one exception is a guardrail breach
-  (errors, a refund spike): stop, revert, and close the bet `lost` with `--decision "stopped: <why>"`.
-- **Sample ratio check** after the first few days: arms should be close to the planned split.
-  A 50/50 test at 4,000 vs 4,600 is a broken assignment, not a result. Fix the flag and restart
-  the clock (a new bet id).
+  (errors, a refund spike): stop, revert, and close the bet with
+  `gtm.py bet close <id> --force --void "guardrail breached: <what>"`. A void bet has no result and
+  counts toward neither fit nor learnings. Report the breach in the digest.
+- **Sample ratio check** after the first few days: `python3 scripts/stats.py srm --a 4000 --b 4600`
+  (add `--split` for an uneven plan). `mismatch: true` (p < 0.001) means a broken assignment, not
+  a result. Fix the flag, void the bet (`--force --void "SRM: <cause>"`) and open a new one with a
+  new id and check date.
 - Nothing else changes on the tested page while the test runs. Note any launches in plan.md.
 
 ## 5. Close it
@@ -79,8 +90,11 @@ On the check date (`bet_close` in the gtm tick):
    primary metric.
 2. Explain the numbers: `python3 scripts/stats.py test --a 4000:124 --b 4000:150` (rates, lift,
    p-value, 95% interval).
-3. Close: `gtm.py bet close <id> --a 4000:124 --b 4000:150 --source "PostHog experiment <name>"`.
-   gtm.py judges p < 0.05 as won or lost and fewer than 100 per arm as inconclusive.
+3. Close: `gtm.py bet close <id> --a 4000:124 --b 4000:150 --min-n <per_arm> --source "PostHog
+   experiment <name>"`, with `--min-n` set to the planned `per_arm` from `stats.py size`. gtm.py
+   compares the variant (b) with the control (a): p < 0.05 with the predicted sign is won, with the
+   wrong sign lost. Fewer than `--min-n` per arm, or too few conversions for the z-test
+   (`small_counts`), is inconclusive. A/B bets always close from the two arms' counts.
 4. Holdout bets close from the metrics store (`gtm.py bet close <id>` once both the metric and the
    control are measured after the check date). `stats.py holdout` shows the arithmetic.
 5. Ship the winner (remove the flag in a PR) or revert the loser. Inconclusive means keep the
@@ -91,6 +105,6 @@ Learnings come only through `gtm.py learnings`: a strong-method result the human
 ## Don't
 
 - Don't test several changes on one page at once unless it is a planned multi-variant test sized
-  for it.
+  for it (`stats.py days --arms 3` splits alpha across the comparisons).
 - Don't report a before/after result as proof. Say "directional".
 - Don't change price, plans, billing or anyone's data inside a test without the human's approval.

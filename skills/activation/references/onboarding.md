@@ -36,7 +36,8 @@ bet, not a rule; test it against this product's activation event.
 
 ## Measuring
 
-- Primary metric: the next stage (`stage:activated` or `stage:paid`) for the cohort that saw the
-  change.
+- Primary metric: the conversion into the next stage, `rate:<rungs.activating>` or
+  `rate:<rungs.paying>` from the motion's template (e.g. `rate:activated`), for the cohort that saw
+  the change.
 - Guardrails: retention after 30 days, support tickets, refunds or cancellations.
 - Cohorts by signup week, so a change isn't credited for a busy week.

@@ -24,7 +24,8 @@ real data". Pick it with the human:
 2. For each, compare 30-day retention of users who did it in their first week versus those who
    didn't. The best candidate separates the two groups most and happens early.
 3. Name it in `gtm.json` `measurement.stage_events.activated` (through `../measurement`) and in
-   product-context.md. Changing it later resets the stage's history, so get agreement first.
+   product-context.md. Changing it later breaks comparability with earlier counts (start a new bet and note the change),
+   so get agreement first.
 
 ## 2. Find the drop-off
 
@@ -51,7 +52,8 @@ Typical changes, smallest first (`references/onboarding.md` has patterns):
 | paywall blocks before value | let users see the result first, then ask |
 
 For each change: open the bet (`--track conversion --channel on_site --tactic signup_flow |
-onboarding_change | paywall_change`, `--metric stage:activated` or `stage:paid`), size it with
+onboarding_change | paywall_change`, `--metric rate:<rungs.activating>` or `rate:<rungs.paying>` from the motion's template in
+`../gtm/references/funnel-templates.json`, e.g. `rate:activated`), size it with
 `../experiments/scripts/stats.py days`, ship the PR behind a flag, close through
 `../experiments`.
 

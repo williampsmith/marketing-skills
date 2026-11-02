@@ -93,6 +93,8 @@ class PostHogTest(StoreCase):
         self.assertEqual(got["stage:visit"], 5000)
         self.assertEqual(got["source_capture_rate"], 0.84)
         self.assertEqual(gtm.metric_latest("stage:signup")["value"], 120)
+        self.assertAlmostEqual(gtm.metric_latest("rate:signup")["value"], 120 / 5000)
+        self.assertAlmostEqual(gtm.metric_latest("rate:activated")["value"], 30 / 120)
         self.assertEqual(fake.calls[0]["headers"]["Authorization"], "Bearer phx_test")
         self.assertIn("/api/projects/42/query/", fake.calls[0]["url"])
 

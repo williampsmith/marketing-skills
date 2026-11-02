@@ -186,7 +186,7 @@ At most `max_actions` (2) per session. Finished, reviewable work beats half-done
    holdout (change half the pages or prompt topics, keep half as
    `--control-metric … --control-baseline <now>`) when the unit can be split; staggered rollout for
    many similar units; before/after only as a last resort. Check dates: 2-4 weeks for AI answers and
-   pages, longer for SEO, the sales cycle's leading indicator for long cycles.
+   pages (A/B: launch date + `../experiments/scripts/stats.py days`), longer for SEO, the sales cycle's leading indicator for long cycles.
 4. Do it through the skill, with its gates intact and `../writing` for any copy. The output is a PR
    (pages, site changes) or drafts (outreach, profiles), or both. `next` only offers tactics whose
    skill is installed; if the focus itself has no installed skill (`focus.skills` is empty), don't

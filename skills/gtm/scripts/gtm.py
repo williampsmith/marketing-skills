@@ -961,6 +961,10 @@ def bet_open(a) -> int:
     if a.expected == a.baseline:
         print("--expected must differ from --baseline: say what you expect to move", file=sys.stderr)
         return 1
+    if a.metric.startswith("stage:") and a.method != "ab" and 0 < a.baseline < 1 and 0 < a.expected <= 1:
+        print(f"{a.metric} is a 28-day count, not a rate; use rate:{a.metric[6:]} for conversion rates",
+              file=sys.stderr)
+        return 1
     try:
         check = _date(a.check)
     except ValueError:
@@ -990,12 +994,31 @@ def ztest(a_n: int, a_x: int, b_n: int, b_x: int) -> dict:
     pool = (a_x + b_x) / (a_n + b_n)
     se = (pool * (1 - pool) * (1 / a_n + 1 / b_n)) ** 0.5
     z = (pb - pa) / se if se else 0.0
-    return {"a_rate": pa, "b_rate": pb, "p_value": round(2 * (1 - NormalDist().cdf(abs(z))), 5), "n": min(a_n, b_n)}
+    small = min(a_x, a_n - a_x, b_x, b_n - b_x) < 5 or min(pool * a_n, pool * b_n, (1 - pool) * a_n, (1 - pool) * b_n) < 5
+    return {"a_rate": pa, "b_rate": pb, "p_value": round(2 * (1 - NormalDist().cdf(abs(z))), 5), "n": min(a_n, b_n),
+            "small_counts": small}
 
 
 def judge(b: dict, observed: float, control_observed: float | None, p_value: float | None, n: int | None,
-          min_n: int) -> dict:
+          min_n: int, ab: dict | None = None) -> dict:
     expected_effect = b["expected"] - b["baseline"]
+    if b["method"] == "ab":
+        if not ab:
+            raise ValueError("an A/B bet closes with --a VISITORS:CONVERSIONS --b VISITORS:CONVERSIONS")
+        # an A/B test compares the arms; the bet's baseline only says which direction counts as a win
+        effect = ab["b_rate"] - ab["a_rate"]
+        ratio = effect / expected_effect if expected_effect else 0.0
+        if ab["n"] < min_n:
+            status, note = "inconclusive", f"n = {ab['n']} per arm < {min_n}: underpowered"
+        elif ab["small_counts"]:
+            status, note = "inconclusive", "too few conversions for the z-test (expected cells under 5)"
+        elif ab["p_value"] >= 0.05:
+            status, note = "inconclusive", f"p = {ab['p_value']:.3f}"
+        else:
+            status, note = ("won" if ratio > 0 else "lost"), f"p = {ab['p_value']:.3f}"
+        return {"status": status, "effect": round(effect, 4), "expected_effect": round(expected_effect, 4),
+                "ratio": round(ratio, 3), "note": note, "a_rate": round(ab["a_rate"], 5),
+                "b_rate": round(ab["b_rate"], 5), "p_value": ab["p_value"]}
     effect = observed - b["baseline"]
     if b["method"] in ("holdout", "staggered"):
         if control_observed is None or b.get("control_baseline") is None:
@@ -1003,17 +1026,7 @@ def judge(b: dict, observed: float, control_observed: float | None, p_value: flo
         effect -= control_observed - b["control_baseline"]
     ratio = effect / expected_effect if expected_effect else 0.0
     note = ""
-    if b["method"] == "ab":
-        if p_value is None:
-            raise ValueError("an A/B bet closes with --a VISITORS:CONVERSIONS --b VISITORS:CONVERSIONS (or --p-value)")
-        if n is not None and n < min_n:
-            status, note = "inconclusive", f"n = {n} < {min_n}: underpowered"
-        elif p_value >= 0.05:
-            status, note = "inconclusive", f"p = {p_value:.3f}"
-        else:
-            status = "won" if ratio > 0 else "lost"
-            note = f"p = {p_value:.3f}"
-    elif n is not None and n < min_n:
+    if n is not None and n < min_n:
         status, note = "inconclusive", f"n = {n} < {min_n}: underpowered"
     elif ratio >= 0.5:
         status = "won"
@@ -1053,15 +1066,27 @@ def bet_close(a) -> int:
         print("values passed by hand need --source (where they came from); they are marked as agent-supplied",
               file=sys.stderr)
         return 1
+    if a.void:
+        b.update({"status": "void", "closed": today().isoformat(), "decision": f"void: {a.void}",
+                  "result": {"note": "stopped or abandoned; not counted in fit or learnings", "closed_early": early}})
+        save_bets(rows)
+        outbox("marketing_bet", {**b, "change": "voided"})
+        print(json.dumps(b, indent=2))
+        return 0
     p_value, n = a.p_value, a.n
     observed, ctrl, observed_by = a.observed, a.control_observed, ("agent: " + a.source) if supplied else "metrics store"
-    if b["method"] == "ab" and (a.a or a.b):
+    ab = None
+    if b["method"] == "ab":
+        if not (a.a and a.b):
+            print("an A/B bet closes with --a VISITORS:CONVERSIONS --b VISITORS:CONVERSIONS --source …",
+                  file=sys.stderr)
+            return 1
         try:
-            t = ztest(*_arm(a.a), *_arm(a.b))
+            ab = ztest(*_arm(a.a), *_arm(a.b))
         except ValueError as e:
             print(str(e), file=sys.stderr)
             return 1
-        observed, p_value, n = t["b_rate"], t["p_value"], t["n"]
+        observed = ab["b_rate"]
     when = f"after {b['opened']}" if early else f"on or after {b['check']}"
     if observed is None:
         m = _measured(b["metric"], b, early)
@@ -1076,7 +1101,7 @@ def bet_close(a) -> int:
             return 1
         ctrl = float(m["value"])
     try:
-        res = judge(b, observed, ctrl, p_value, n, a.min_n)
+        res = judge(b, observed, ctrl, p_value, n, a.min_n, ab)
     except ValueError as e:
         print(str(e), file=sys.stderr)
         return 1
@@ -1959,7 +1984,9 @@ def main() -> int:
     p.add_argument("--b", help="A/B variant arm as VISITORS:CONVERSIONS")
     p.add_argument("--source", help="where hand-passed values came from (required with --observed, --a/--b)")
     p.add_argument("--n", type=int, help="sample size behind the observed value")
-    p.add_argument("--min-n", type=int, default=100)
+    p.add_argument("--min-n", type=int, default=100, help="smallest sample (per arm for A/B) to judge on; "
+                   "pass the planned per_arm from experiments' stats.py size")
+    p.add_argument("--void", metavar="REASON", help="close a stopped or abandoned bet without a result")
     p.add_argument("--cost-per-customer", type=float)
     p.add_argument("--decision", default="")
     p.add_argument("--status")

@@ -9,8 +9,12 @@
         two-proportion z-test (two-sided): rates, absolute and relative lift, p-value, 95% interval
     python3 stats.py holdout --treated-before 0.10 --treated-after 0.25 --control-before 0.10 --control-after 0.12
         difference in differences for holdout bets
+    python3 stats.py srm --a 4000 --b 4600 [--split 0.5]
+        sample ratio mismatch: is the split broken? (chi-square, flags p < 0.001)
 
-Output is JSON; `test` prints the --p-value to pass to `gtm.py bet close`. Stdlib only.
+Output is JSON. Close A/B bets with `gtm.py bet close <id> --a VISITORS:CONVERSIONS --b … --min-n <per_arm>`;
+`test` explains the same result. With more than two arms, alpha is split across the comparisons
+(Bonferroni). Stdlib only.
 """
 from __future__ import annotations
 
@@ -30,7 +34,11 @@ def size(baseline: float, mde: float, alpha: float = 0.05, power: float = 0.8) -
         raise ValueError("baseline must be a rate between 0 and 1")
     if mde <= 0:
         raise ValueError("mde is a relative lift, e.g. 0.2 for +20%")
-    p1, p2 = baseline, min(baseline * (1 + mde), 0.9999)
+    if baseline * (1 + mde) >= 1:
+        raise ValueError("baseline × (1 + mde) must stay below 1: that lift isn't possible on this rate")
+    if not 0 < alpha < 1 or not 0.5 <= power < 1:
+        raise ValueError("alpha must be between 0 and 1, and power between 0.5 and 1")
+    p1, p2 = baseline, baseline * (1 + mde)
     za, zb = N.inv_cdf(1 - alpha / 2), N.inv_cdf(power)
     pbar = (p1 + p2) / 2
     n = ((za * math.sqrt(2 * pbar * (1 - pbar)) + zb * math.sqrt(p1 * (1 - p1) + p2 * (1 - p2))) ** 2) / (p2 - p1) ** 2
@@ -38,9 +46,14 @@ def size(baseline: float, mde: float, alpha: float = 0.05, power: float = 0.8) -
 
 
 def days(baseline: float, mde: float, daily: float, arms: int = 2, alpha: float = 0.05, power: float = 0.8) -> dict:
-    n = size(baseline, mde, alpha, power)
-    d = math.ceil(n * arms / daily) if daily > 0 else None
-    ok = d is not None and d <= MAX_WEEKS * 7
+    if daily <= 0:
+        raise ValueError("daily is eligible visitors per day, above 0")
+    if arms < 2:
+        raise ValueError("a test needs at least 2 arms")
+    n = size(baseline, mde, alpha / (arms - 1), power)  # Bonferroni across the comparisons with control
+    d = math.ceil(n * arms / daily)
+    d = math.ceil(d / 7) * 7  # whole weeks: weekdays and weekends behave differently
+    ok = d <= MAX_WEEKS * 7
     return {"per_arm": n, "arms": arms, "days": d, "run_it": ok,
             "advice": "run it" if ok else
             f"over {MAX_WEEKS} weeks: test a bigger change, a higher-traffic page, or use a holdout or before/after bet"}
@@ -56,9 +69,11 @@ def ztest(a_n: int, a_x: int, b_n: int, b_x: int) -> dict:
     p = 2 * (1 - N.cdf(abs(z)))
     se = math.sqrt(pa * (1 - pa) / a_n + pb * (1 - pb) / b_n)
     lo, hi = (pb - pa) - 1.96 * se, (pb - pa) + 1.96 * se
-    return {"a_rate": round(pa, 5), "b_rate": round(pb, 5), "abs_lift": round(pb - pa, 5),
+    small = min(a_x, a_n - a_x, b_x, b_n - b_x) < 5 or min(pool * a_n, pool * b_n, (1 - pool) * a_n,
+                                                            (1 - pool) * b_n) < 5
+    return {"a_rate": round(pa, 5), "b_rate": round(pb, 5), "abs_lift": round(pb - pa, 5), "small_counts": small,
             "rel_lift": round((pb - pa) / pa, 4) if pa else None, "z": round(z, 3), "p_value": round(p, 5),
-            "ci95_abs": [round(lo, 5), round(hi, 5)], "significant": p < 0.05,
+            "ci95_abs": [round(lo, 5), round(hi, 5)], "significant": p < 0.05 and not small,
             "smallest_arm": min(a_n, b_n)}
 
 
@@ -67,9 +82,26 @@ def holdout(tb: float, ta: float, cb: float, ca: float) -> dict:
             "effect": round((ta - tb) - (ca - cb), 5)}
 
 
+def srm(a: int, b: int, split: float = 0.5) -> dict:
+    """Chi-square goodness of fit for the traffic split; p < 0.001 means the assignment is broken."""
+    if a < 0 or b < 0 or a + b == 0 or not 0 < split < 1:
+        raise ValueError("counts must be non-negative with a positive total, and split between 0 and 1")
+    n = a + b
+    ea, eb = n * split, n * (1 - split)
+    chi = (a - ea) ** 2 / ea + (b - eb) ** 2 / eb
+    p = math.erfc(math.sqrt(chi / 2))  # chi-square with 1 degree of freedom
+    return {"a": a, "b": b, "expected_split": split, "chi2": round(chi, 3), "p_value": round(p, 6),
+            "mismatch": p < 0.001}
+
+
 def _arm(s: str) -> tuple[int, int]:
-    n, _, x = s.partition(":")
-    return int(n), int(x)
+    n, sep, x = s.partition(":")
+    if not sep:
+        raise ValueError(f"an arm is VISITORS:CONVERSIONS, e.g. 1000:50, not {s!r}")
+    try:
+        return int(n), int(x)
+    except ValueError:
+        raise ValueError(f"an arm is VISITORS:CONVERSIONS in whole numbers, not {s!r}") from None
 
 
 def main() -> int:
@@ -87,6 +119,10 @@ def main() -> int:
     p = sub.add_parser("test")
     p.add_argument("--a", required=True, help="control as visitors:conversions")
     p.add_argument("--b", required=True, help="variant as visitors:conversions")
+    p = sub.add_parser("srm")
+    p.add_argument("--a", type=int, required=True, help="users assigned to control")
+    p.add_argument("--b", type=int, required=True, help="users assigned to the variant")
+    p.add_argument("--split", type=float, default=0.5, help="the intended share for control")
     p = sub.add_parser("holdout")
     for k in ("treated-before", "treated-after", "control-before", "control-after"):
         p.add_argument(f"--{k}", type=float, required=True)
@@ -98,6 +134,8 @@ def main() -> int:
             out = days(a.baseline, a.mde, a.daily, a.arms, a.alpha, a.power)
         elif a.cmd == "test":
             out = ztest(*_arm(a.a), *_arm(a.b))
+        elif a.cmd == "srm":
+            out = srm(a.a, a.b, a.split)
         else:
             out = holdout(a.treated_before, a.treated_after, a.control_before, a.control_after)
     except ValueError as e:

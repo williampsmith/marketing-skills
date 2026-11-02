@@ -231,6 +231,16 @@ def pull(dry_run: bool = False) -> dict:
         if v is not None:
             gtm.metric_add(metric, round(v, 6), source="posthog", track=track)
             written.append({"metric": metric, "value": round(v, 6)})
+    # conversion rates between stages, so bets on conversion can name `rate:<stage>`
+    counts = {w["metric"][6:]: w["value"] for w in written if w["metric"].startswith("stage:")}
+    prev = None
+    for st in gtm.template(s)["stages"]:
+        src = st.get("from") or prev
+        if src and st["id"] in counts and counts.get(src):
+            v = round(counts[st["id"]] / counts[src], 6)
+            gtm.metric_add(f"rate:{st['id']}", v, source="posthog", track=st["track"])
+            written.append({"metric": f"rate:{st['id']}", "value": v})
+        prev = st["id"]
     return {"written": written, "errors": errors}
 
 

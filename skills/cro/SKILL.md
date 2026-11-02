@@ -5,9 +5,9 @@ description: Raise the share of visitors who take the first step (signup, trial,
 
 # cro
 
-This skill works the `first_step` rung of the conversion track: visit → the motion's first step
-(`signup` for self-serve, `trial_or_demo` for sales-assisted, `meeting` for enterprise; see
-`../gtm/references/funnel-templates.json`). The fix is almost always one of three things: the
+This skill works the `first_step` rung of the conversion track: the step into the motion's
+`rungs.first_step` stage in `../gtm/references/funnel-templates.json` (for example `signup`,
+`trial_or_demo`, `install` or `add_to_cart`; read it from the template rather than assuming). The fix is almost always one of three things: the
 page doesn't answer what the visitor came for, the action is unclear or costly, or the visitor
 doesn't believe it. Find which one with data before changing anything.
 
@@ -53,7 +53,8 @@ Use `references/page-review.md`. In short:
    the pages of a set (holdout), in waves (staggered), or as a before/after bet that is reported
    as directional. `../experiments` has the details.
 3. Open the bet first (`gtm.py bet open … --track conversion --channel on_site --tactic page_cro`),
-   with the first-step metric as `--metric`.
+   with `--metric rate:<first_step stage>` (e.g. `rate:signup`), the conversion rate into that
+   stage. `stage:<id>` metrics are counts and don't take rate baselines.
 4. Open the PR: variant behind the flag, control unchanged, the same events fired in both. Link the
    bet id in the PR description.
 5. Close on the check date through `../experiments`.
