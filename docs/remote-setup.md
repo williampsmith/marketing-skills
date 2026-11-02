@@ -25,7 +25,11 @@ This is the high-level runbook. Mechanics for each host are in
 |---|---|---|
 | **treg** team + balance | all live data (AI answers, search, pages) | a team for this work, prepaid; per-run and monthly caps live in `gtm.json` |
 | **GitHub token** for a bot or machine user | clone the product repo, push branches, open PRs; push the state repo if you use one | **only those repos**: contents + pull requests write. Fine-grained PAT or GitHub App. |
+| **PostHog Cloud** project (measurement) | funnel counts, attribution, the team's Growth dashboard | the project API key (`phc_`, send-only) and a personal API key (`phx_`) limited to reading queries on that one project, both as env vars on the agent host |
+| **Search Console** (optional) | clicks and rankings | connected once in treg's connected accounts; no Google key on the host |
 | **Model access** | the agent itself | Claude Code: an Anthropic account or API key. Hermes: whichever provider it's configured with. |
+
+The agent never needs a billing key (Stripe, RevenueCat, …): revenue reaches it through PostHog.
 
 What the agent must **not** get: deploy credentials for the website, DNS or CDN access, email
 or social logins, or analytics admin. Everything public goes through a human. That's what keeps

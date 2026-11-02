@@ -9,7 +9,7 @@
       "name": "marketing",
       "source": "./",
       "description": "Growth operator (gtm) plus agent-discoverability skills: ai-visibility-audit, ai-search-optimization, one-pager, citation-outreach, entity-presence, comparison-pages.",
-      "version": "0.4.0"
+      "version": "0.5.0"
     }
   ]
 }

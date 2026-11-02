@@ -1,0 +1,213 @@
+"""Tests for the measurement scripts: PostHog flush/pull/tracking check, Search Console, the report.
+No network: every HTTP and treg call is replaced. Run: python3 -m unittest discover tests"""
+import datetime as dt
+import json
+import os
+from pathlib import Path
+
+from helpers import StoreCase, load
+
+gtm = load("skills/gtm/scripts/gtm.py", "gtm")
+ph = load("skills/measurement/scripts/posthog.py", "posthog_script")
+sc = load("skills/measurement/scripts/search_console.py", "search_console")
+report = load("skills/measurement/scripts/report.py", "report_script")
+
+
+class FakeHTTP:
+    def __init__(self, answers=None, fail_on=None):
+        self.calls = []
+        self.answers = answers or {}
+        self.fail_on = fail_on
+
+    def __call__(self, method, url, body=None, headers=None, timeout=60):
+        self.calls.append({"method": method, "url": url, "body": body, "headers": headers})
+        if self.fail_on and self.fail_on(len(self.calls), url, body):
+            raise ph.PostHogError("boom")
+        if url.endswith("/batch/"):
+            return {"status": 1}
+        q = body["query"]["query"]
+        for needle, value in self.answers.items():
+            if needle in q:
+                return {"results": [[value]]}
+        return {"results": [[None]]}
+
+
+class PostHogTest(StoreCase):
+    module = ph
+
+    def setUp(self):
+        super().setUp()
+        self.saved = {k: os.environ.get(k) for k in ("POSTHOG_PROJECT_API_KEY", "POSTHOG_PERSONAL_API_KEY",
+                                                     "POSTHOG_PROJECT_ID", "POSTHOG_HOST")}
+        os.environ.update({"POSTHOG_PROJECT_API_KEY": "phc_test", "POSTHOG_PERSONAL_API_KEY": "phx_test",
+                           "POSTHOG_PROJECT_ID": "42"})
+        os.environ.pop("POSTHOG_HOST", None)
+        self.real_http, self.real_fetch = ph.http, ph.fetch_page
+        self.run_cli("init", module=gtm)
+
+    def tearDown(self):
+        ph.http, ph.fetch_page = self.real_http, self.real_fetch
+        for k, v in self.saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        super().tearDown()
+
+    def stage_events(self):
+        s = json.loads((gtm.R() / "gtm.json").read_text())
+        s["measurement"] = {"stage_events": {"visit": "$pageview", "signup": "signed_up", "activated": "first_redaction"}}
+        (gtm.R() / "gtm.json").write_text(json.dumps(s))
+
+    def test_flush_sends_batches_without_personal_data_and_empties_the_outbox(self):
+        for i in range(150):
+            gtm.outbox("marketing_metric", {"metric": "x", "value": i, "contact_email": "a@b.c"})
+        fake = FakeHTTP()
+        ph.http = fake
+        out = self.json_cli("flush")
+        self.assertEqual(out["sent"], 150)
+        self.assertEqual(len(fake.calls), 2)
+        first = fake.calls[0]["body"]
+        self.assertEqual(first["api_key"], "phc_test")
+        self.assertTrue(fake.calls[0]["url"].startswith("https://us.i.posthog.com/batch/"))
+        props = first["batch"][0]["properties"]
+        self.assertNotIn("contact_email", props)
+        self.assertTrue(props["distinct_id"].startswith("marketing-operator:"))
+        self.assertEqual(gtm.read_jsonl(gtm.R() / "posthog-outbox.jsonl"), [])
+
+    def test_failed_batch_keeps_the_unsent_rest(self):
+        for i in range(150):
+            gtm.outbox("marketing_metric", {"value": i})
+        ph.http = FakeHTTP(fail_on=lambda n, url, body: n == 2)
+        self.assertEqual(self.run_cli("flush")[0], 1)
+        left = gtm.read_jsonl(gtm.R() / "posthog-outbox.jsonl")
+        self.assertEqual(len(left), 50)
+        self.assertEqual(left[0]["properties"]["value"], 100)
+
+    def test_pull_writes_stage_counts_and_source_capture(self):
+        self.stage_events()
+        fake = FakeHTTP({"'$pageview'": 5000, "countIf": 0.84, "'signed_up'": 120, "'first_redaction'": 30})
+        ph.http = fake
+        out = self.json_cli("pull")
+        got = {w["metric"]: w["value"] for w in out["written"]}
+        self.assertEqual(got["stage:visit"], 5000)
+        self.assertEqual(got["source_capture_rate"], 0.84)
+        self.assertEqual(gtm.metric_latest("stage:signup")["value"], 120)
+        self.assertEqual(fake.calls[0]["headers"]["Authorization"], "Bearer phx_test")
+        self.assertIn("/api/projects/42/query/", fake.calls[0]["url"])
+
+    def test_pull_refuses_unsafe_names_and_needs_config(self):
+        self.assertEqual(self.run_cli("pull")[0], 1)
+        s = json.loads((gtm.R() / "gtm.json").read_text())
+        s["measurement"] = {"stage_events": {"visit": "x' OR 1=1 --"}}
+        (gtm.R() / "gtm.json").write_text(json.dumps(s))
+        self.assertEqual(self.run_cli("pull")[0], 1)
+        self.assertIn("unsafe", self.last_err)
+
+    def test_eu_host_and_missing_keys(self):
+        os.environ["POSTHOG_HOST"] = "eu"
+        self.assertEqual(ph.hosts()[1], "https://eu.posthog.com")
+        os.environ["POSTHOG_HOST"] = "http://insecure"
+        self.assertEqual(self.run_cli("query", "SELECT 1")[0], 1)
+        os.environ.pop("POSTHOG_HOST")
+        os.environ.pop("POSTHOG_PERSONAL_API_KEY")
+        self.assertEqual(self.run_cli("query", "SELECT 1")[0], 1)
+        self.assertIn("POSTHOG_PERSONAL_API_KEY", self.last_err)
+
+    def test_tracking_check_sets_tracking_ok(self):
+        self.stage_events()
+        ph.fetch_page = lambda url: "<script>posthog.init('phc_x',{api_host:'https://us.i.posthog.com'})</script>"
+        ph.http = FakeHTTP({"'signed_up'": 7})
+        code, out = self.run_cli("tracking-check", "--url", "https://example.com")
+        self.assertEqual(code, 0, self.last_err)
+        self.assertEqual(gtm.metric_latest("tracking_ok")["value"], 1)
+        ph.fetch_page = lambda url: "<html>no analytics</html>"
+        code, out = self.run_cli("tracking-check", "--url", "https://example.com")
+        self.assertEqual(code, 1)
+        self.assertIn("no PostHog snippet", json.loads(out)["problems"][0])
+        self.assertEqual(gtm.metric_latest("tracking_ok")["value"], 0)
+
+
+class SearchConsoleTest(StoreCase):
+    module = sc
+
+    def setUp(self):
+        super().setUp()
+        self.run_cli("init", module=gtm)
+
+    def fake_call(self, site, body):
+        dims = body.get("dimensions")
+        if not dims:
+            return {"result": {"output": {"rows": [{"clicks": 900, "impressions": 20000}]}}}
+        if dims == ["query"]:
+            return {"result": {"output": {"rows": [
+                {"keys": ["acme pricing"], "clicks": 300, "impressions": 900, "position": 1.2},
+                {"keys": ["redact pdf"], "clicks": 200, "impressions": 4000, "position": 6.0},
+                {"keys": ["remove text from pdf"], "clicks": 20, "impressions": 3000, "position": 14.0},
+                {"keys": ["tiny"], "clicks": 0, "impressions": 3, "position": 2.0}]}}}
+        return {"result": {"output": {"rows": [{"keys": ["https://acme.com/a"], "impressions": 5},
+                                               {"keys": ["https://acme.com/b/"], "impressions": 1}]}}}
+
+    def test_measure_brand_split_top10_and_index_proxy(self):
+        out = sc.measure("sc-domain:acme.com", "https://acme.com", ["acme"], 28, call=self.fake_call,
+                         sitemap=lambda u: ["https://acme.com/a", "https://acme.com/b", "https://acme.com/c", "https://acme.com/d"])
+        self.assertEqual(out["search_clicks_28d"], 900)
+        self.assertEqual(out["nonbrand_clicks_28d"], 220)
+        self.assertEqual(out["query_top10_share"], 0.5)        # redact pdf in, remove text out, tiny ignored
+        self.assertEqual(out["indexed_ratio"], 0.5)
+        end = dt.date.fromisoformat(out["window"][1])
+        self.assertEqual((dt.date.today() - end).days, sc.LAG_DAYS)
+
+    def test_query_map_from_seo_skill_wins(self):
+        (gtm.R() / "seo").mkdir()
+        (gtm.R() / "seo" / "queries.csv").write_text("query,intent,page\nredact pdf,how,/r\npdf redaction tool,best,\n")
+        out = sc.measure("sc-domain:acme.com", "", ["acme"], 28, call=self.fake_call, sitemap=lambda u: [])
+        self.assertEqual(out["query_top10_share"], 0.5)
+        self.assertEqual(out["top10_basis"], "query map")
+
+    def test_cli_needs_brand_terms(self):
+        self.assertEqual(self.run_cli("sc-domain:acme.com")[0], 1)
+        self.assertIn("brand", self.last_err)
+
+
+class ReportTest(StoreCase):
+    module = report
+
+    def test_report_renders_from_the_store(self):
+        self.run_cli("init", module=gtm)
+        for d, v in (("2026-10-01", 0.1), ("2026-10-08", 0.15), ("2026-10-15", 0.2)):
+            gtm.metric_add("ai:mention", v, date=d)
+        gtm.metric_add("stage:visit", 4000)
+        code, out = self.run_cli("--days", "3650")
+        self.assertEqual(code, 0)
+        page = Path(out.strip()).read_text()
+        self.assertIn("Growth scorecard", page)
+        self.assertIn("Focus: ", page)
+        self.assertIn("<svg", page)
+        self.assertNotIn("http://", page)
+        self.assertNotIn("https://", page)
+
+
+class ConnectTest(StoreCase):
+    module = gtm
+
+    def test_measurement_jobs_wait_for_their_connections(self):
+        self.run_cli("init")
+        t = self.json_cli("tick")
+        skipped = {j["job"]: j["skipped"] for j in t["skipped"]}
+        self.assertIn("connect posthog", skipped["tracking_check"])
+        self.assertIn("connect search_console", skipped["search_console"])
+        self.json_cli("connect", "posthog")
+        self.json_cli("connect", "search_console")
+        due = [j["job"] for j in self.json_cli("tick")["due"]]
+        self.assertIn("tracking_check", due)
+        self.assertIn("metrics_sync", due)
+        self.assertIn("search_console", due)
+        self.assertNotIn("monthly_report", due)          # clock starts at init
+
+    def test_revenue_source_is_validated(self):
+        self.run_cli("init")
+        self.assertEqual(self.json_cli("connect", "revenue", "events")["revenue_source"], "events")
+        self.assertEqual(self.run_cli("connect", "revenue", "venmo")[0], 1)
+        self.assertIsNone(self.json_cli("connect", "revenue", "none")["revenue_source"])
+        self.assertFalse(self.json_cli("connect", "posthog", "off")["posthog"])

@@ -25,6 +25,7 @@ experiment results.
     python3 gtm.py bet list [--status open]
     python3 gtm.py learnings [--accept ID | --reject ID]
     python3 gtm.py profile [--motion M --acv N --cycle-days N --regulated R --attention ch=0.3] [--confirm]
+    python3 gtm.py connect posthog|search_console [on|off] | connect revenue stripe
     python3 gtm.py pause [--reason R] | resume   # kill switch
     python3 gtm.py digest                        # data half of digests/<date>.md
     python3 gtm.py store use SPEC                # remember a store (path, git URL or "repo") for this repo
@@ -125,6 +126,30 @@ DEFAULT_JOBS = {
         "acts_when": "a source behind a live comparison page no longer says what the page claims",
         "self_check": "read the source itself, not a cached copy",
         "stop": "open a PR correcting the page; never leave a known-wrong claim live"},
+    "tracking_check": {
+        "every_days": 1, "usd": 0.0, "stages": ["launched"], "skill": "measurement",
+        "track": "measurement", "kind": "sensor", "requires": ["connection:posthog"],
+        "acts_when": "the site lost its PostHog snippet or the first step stopped firing",
+        "self_check": "a quiet day is not a broken tag: check the snippet and two days of events",
+        "stop": "alert; the fix is a PR to the tracking code"},
+    "metrics_sync": {
+        "every_days": 1, "usd": 0.0, "stages": ["prelaunch", "launched"], "skill": "measurement",
+        "track": "measurement", "kind": "sensor", "requires": ["connection:posthog"],
+        "acts_when": "always: send the operator's events, pull funnel counts, revenue and custom queries",
+        "self_check": "a stage count that jumps or drops by more than half overnight is checked before anything acts on it",
+        "stop": "on a PostHog error, keep the outbox and retry tomorrow"},
+    "search_console": {
+        "every_days": 7, "usd": 0.0, "stages": ["launched"], "skill": "measurement",
+        "track": "demand", "kind": "sensor", "requires": ["connection:search_console"],
+        "acts_when": "always records clicks, top-10 share and the index proxy",
+        "self_check": "Search Console lags about 3 days; never compare a partial week",
+        "stop": "skip on quota errors"},
+    "monthly_report": {
+        "every_days": 30, "usd": 0.0, "stages": ["launched"], "skill": "measurement",
+        "track": "all", "kind": "review",
+        "acts_when": "monthly",
+        "self_check": "every number in the report names its source",
+        "stop": "none: a report is read-only"},
     "panel_review": {
         "every_days": 90, "usd": 0.0, "stages": ["launched"], "skill": "ai-visibility-audit",
         "track": "discoverability", "kind": "review",
@@ -1191,7 +1216,8 @@ def cmd_init(a) -> int:
     if not s["last_run"]:
         # reviews start their clock at init; launch_scan scans only changes after init
         s["last_run"] = {k: today().isoformat() for k in
-                         ("launch_scan", "strategy_review", "panel_review", "comparison_reverify", "fit_review")}
+                         ("launch_scan", "strategy_review", "panel_review", "comparison_reverify", "fit_review",
+                          "monthly_report")}
     upgrade(s)
     save_state(s)
     print(f"wrote {STATE()} (stage={s['stage']}, motion={s['profile']['motion']}, "
@@ -1439,6 +1465,26 @@ def cmd_profile(a) -> int:
     return 0
 
 
+CONNECTIONS = ("posthog", "search_console")
+REVENUE_SOURCES = ("stripe", "revenuecat", "paddle", "chargebee", "polar", "events")
+
+
+def cmd_connect(a) -> int:
+    """Record which data sources are connected; jobs that `require` them start or stop accordingly.
+    Credentials never go here: they stay in the environment or treg."""
+    s = load_state()
+    if a.name == "revenue":
+        if a.value not in REVENUE_SOURCES + ("none",):
+            print(f"revenue source is one of {', '.join(REVENUE_SOURCES)} or none", file=sys.stderr)
+            return 1
+        s["connections"]["revenue_source"] = None if a.value == "none" else a.value
+    else:
+        s["connections"][a.name] = a.value != "off"
+    save_state(s)
+    print(json.dumps(s["connections"], indent=2))
+    return 0
+
+
 def cmd_pause(a) -> int:
     s = load_state()
     s["paused"] = True
@@ -1658,6 +1704,9 @@ def main() -> int:
     p.add_argument("--geo", help="comma-separated markets, e.g. US,UK,DE")
     p.add_argument("--attention", action="append", help="CHANNEL=0..1 from customer research; repeatable")
     p.add_argument("--confirm", action="store_true", help="the human confirmed the profile")
+    p = sub.add_parser("connect", help="mark a data source connected (on/off) or set the revenue source")
+    p.add_argument("name", choices=list(CONNECTIONS) + ["revenue"])
+    p.add_argument("value", nargs="?", default="on", help="on | off, or for revenue: " + " | ".join(REVENUE_SOURCES))
     p = sub.add_parser("pause")
     p.add_argument("--reason", default="")
     p = sub.add_parser("budget")
@@ -1734,7 +1783,7 @@ def main() -> int:
                "focus": cmd_focus, "fit": cmd_fit, "tracks": cmd_tracks, "next": cmd_next, "budget": cmd_budget,
                "record": cmd_record, "may": cmd_may, "metric": cmd_metric, "bet": cmd_bet,
                "learnings": cmd_learnings, "pause": cmd_pause, "resume": cmd_resume, "profile": cmd_profile,
-               "stage": cmd_stage, "digest": cmd_digest, "store": cmd_store, "sync": cmd_sync,
+               "stage": cmd_stage, "connect": cmd_connect, "digest": cmd_digest, "store": cmd_store, "sync": cmd_sync,
                "migrate": cmd_migrate}[a.cmd]
     try:
         if a.cmd in ("where", "store"):

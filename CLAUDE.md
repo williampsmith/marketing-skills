@@ -18,6 +18,11 @@ the loop and `docs/design/growth-operator.md` for the design being implemented.
   `gtm.py`) and `channel-fit.md`, `funnel-templates.json` (stages and floors per motion),
   `tracks.md`, `guardrails.md` (action tiers, sending authority, kill switch, cooldowns),
   `compliance.md` (email law, endorsements, personal data), `hosts.md`, `plan-template.md`.
+- `skills/measurement/scripts/`: `posthog.py` (send the outbox, pull funnel counts, source capture and
+  configured HogQL queries, tracking check; keys only from env), `search_console.py` (Search Console
+  through treg), `report.py` (self-contained HTML scorecard). They import `gtm` for metrics and the
+  store. `tests/test_measurement.py` replaces every network call (`posthog.http`, `fetch_page`,
+  the treg call) and must stay offline.
 - `skills/product-context/` (GTM profile, positioning, learnings) and `skills/writing/` (claims,
   information-gain and AI-tell gates) are shared by every drafting skill.
 - `skills/ai-visibility-audit/scripts/run_panel.py` (treg CLI batch runner) and `score_panel.py`

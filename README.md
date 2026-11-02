@@ -64,6 +64,7 @@ into which tactics get tried next. A result becomes a learning only after a huma
 |---|---|---|
 | `gtm` | Entry point and operator: init (incl. pre-launch), daily tick, launch, status; focus, fit, bets, budget, digest | ~$8-12/month at defaults |
 | `product-context` | The GTM profile (sales motion, deal size, buyers, cycle) plus positioning, objections, customer language, voice and accepted learnings; every skill reads it | free |
+| `measurement` | Tracking and attribution (AI referrers included), funnel stage counts, the revenue source, the Search Console sensor and a monthly scorecard, with PostHog Cloud as the system of record | free (PostHog free tier) |
 | `writing` | The gates every draft passes: claims from the ledger, an information-gain test, no AI-tell phrasing | free |
 | `ai-visibility-audit` | Runs a fixed prompt panel across 5 engines, scores mention, citation, share of voice and gaps, diffs against the last run | ~$0.02 per prompt across all engines |
 | `ai-search-optimization` | Bot access (robots.txt + CDN), llms.txt, feeds, quick answers, JSON-LD, IndexNow, AI-referral tracking; verifies against production | ~free |
@@ -78,8 +79,16 @@ The product repo only receives PRs. The program's memory (config, metrics, bets,
 digests, drafts) lives in a **state store** outside it: `~/.marketing/<owner>-<repo>/` on the
 agent's machine by default, or a private git repo for hosts that don't keep files between runs.
 `gtm.py where` prints the location. Installs from 0.3 that kept `.marketing/` in the repo keep
-working and can move with `gtm.py migrate --to <dir or git URL>`. Later phases add PostHog as the
-team's dashboard for funnel and marketing metrics.
+working and can move with `gtm.py migrate --to <dir or git URL>`.
+
+### Where the numbers live
+
+Metrics and experiment results go to **PostHog Cloud** next to the product's own funnel: the
+`measurement` skill sends the operator's events and pulls funnel counts and revenue back, and a
+"Growth" dashboard with a weekly email or Slack subscription is the team's view. Revenue comes from
+Stripe by default (or RevenueCat, Paddle, Chargebee, Polar, or the product's own purchase events),
+always read through PostHog. Teams without PostHog get a monthly self-contained HTML scorecard from
+the state store (`measurement/scripts/report.py`) and can record the metrics by hand.
 
 ## Install
 

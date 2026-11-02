@@ -90,6 +90,8 @@ Ask the human only for what the repo can't tell you. Infer the rest and confirm.
    - claims ledger `<state>/claims.md` (`../one-pager/references/claims-ledger.md`)
    - `../product-context`: `<state>/product-context.md` and the GTM profile (`gtm.py profile`). Fit
      uses the profile only once it is confirmed; until then it uses the motion's defaults.
+   - measurement: `../measurement` setup (PostHog, the revenue source, Search Console), or record the
+     funnel metrics by hand (`../measurement`, "Without PostHog")
    - entity card `<state>/entity.md` (`../entity-presence`)
    - prompt panel `<state>/prompt-panel.json` (`../ai-visibility-audit/references/panel-design.md`)
 5. **Fit.** `gtm.py fit`. Read the ineligible channels back to the human with their reasons; record
@@ -137,6 +139,10 @@ Skipped jobs (missing connection, ineligible channel, track off) go in the diges
 | `fit_review` | re-read the GTM profile; if `../customer-research` is installed, re-measure attention; `gtm.py fit`; propose profile or override changes. |
 | `entity_probe` | entity-presence step 2; update `known_issues` |
 | `comparison_reverify` | comparison-pages: re-read every dossier source behind a live page |
+| `tracking_check` | `../measurement`: `posthog.py tracking-check` → record. Exit 1 is an alert: notify now. |
+| `metrics_sync` | `../measurement`: `posthog.py sync` (send the outbox, pull funnel counts and queries) → record. |
+| `search_console` | `../measurement`: `search_console.py <property>` → record. |
+| `monthly_report` | `../measurement`: `report.py` → link the scorecard in the digest → record. |
 | `panel_review` | ai-visibility-audit panel design: propose changes, never apply them silently. Bump `panel_version`. |
 
 ## Focus, fit and the order of work
@@ -150,8 +156,9 @@ when it isn't the focus. A focus holds for 30 days unless a stage drops below ha
 
 Never override the focus by feel. If you think it's wrong, say so in the digest with the numbers.
 `focus.notes` and the digest say when a track can't be worked because its skill isn't installed.
-Without the measurement skill the funnel isn't gated on measurement; a team can record
-`tracking_ok`, `source_capture_rate` and `stage:<id>` counts by hand (`gtm.py metric add`) instead.
+The measurement gate applies once `../measurement` is installed or measurement metrics exist.
+Its metrics come from PostHog (`metrics_sync`, `tracking_check`) or, without PostHog, are recorded by
+hand daily (`gtm.py metric add tracking_ok …`, `stage:<id>` counts); see `../measurement`.
 
 ## work_session: the part that moves numbers
 

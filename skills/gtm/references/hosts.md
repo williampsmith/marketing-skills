@@ -38,6 +38,9 @@ skills directory, keeping the skills side by side. Then:
 - The host needs the product repo checked out (with `gh` for PRs), a treg token (`treg` CLI signed
   in, or the token in the agent's environment), and `python3`. The `dir` backend keeps state on the
   host.
+- With measurement on PostHog, the agent's environment also needs `POSTHOG_PROJECT_API_KEY`,
+  `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID` and `POSTHOG_HOST` (see `../measurement`). No
+  billing keys: revenue reaches the agent through PostHog.
 - Create the cron job with Hermes's scheduler, using the prompt above, daily. Cron jobs persist in the
   agent's data directory (e.g. `/opt/data/cron/` in the Docker image). If you manage agents
   declaratively, keep the job definition in that config like the rest of the agent's setup.
@@ -49,7 +52,7 @@ skills directory, keeping the skills side by side. Then:
 ## Claude Code
 
 - Cloud: `/schedule` a daily routine with the prompt above on the product repo. Add
-  `MARKETING_STATE=<state repo git URL>` and the treg token as environment secrets, and give the
+  `MARKETING_STATE=<state repo git URL>`, the treg token and the PostHog variables as environment secrets, and give the
   routine write access to the state repo. The skill's "Every run" steps pull and push it.
 - Own server: cron runs Claude Code headless in the product repo once a day. The `dir` backend is
   enough.
