@@ -30,7 +30,7 @@ Run each target prompt on:
 - Google AI Mode: `cloro.google.serp.ai_mode`, body `{"prompt": …, "gl": "US"}`
 
 The audit skill's `run_panel.py` can do this with a throwaway panel file
-(`--panel .marketing/pages/<slug>/panel.json --out .marketing/pages/<slug>/recon`), which gives the
+(`--panel <state>/pages/<slug>/panel.json --out <state>/pages/<slug>/recon`), which gives the
 same normalized `answers.jsonl` the audit uses.
 
 Then read the cited pages: `treg.web.extract` with header `X-Treg-Route-Prefer: tinyfish` (free),

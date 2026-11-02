@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Watch a list of web pages for changes and for whether they mention given names.
 
-    python3 watch_pages.py                       # uses .marketing/watch.json
+    python3 watch_pages.py                       # uses <state>/watch.json
     python3 watch_pages.py --only competitor     # one purpose group
     python3 watch_pages.py --add https://x.com/pricing --purpose competitor --used-by site/compare/x.html
 
-Watch file (.marketing/watch.json):
+Watch file (<state>/watch.json, where <state> is `gtm.py where`):
     [{"url": "...", "purpose": "competitor|target|profile",
       "used_by": ["path/to/page/that/relies/on/it"], "expect": ["Brand", "Competitor"]}]
 
@@ -15,7 +15,7 @@ Shared by three skills:
   entity-presence   - does each profile still carry the canonical description?
 
 Reads pages through treg's free routed extractor (TinyFish first), falling back
-to a plain fetch. Snapshots go in .marketing/watch/<id>/. Stdlib only.
+to a plain fetch. Snapshots go in <state>/watch/<id>/. Stdlib only.
 """
 from __future__ import annotations
 
@@ -30,6 +30,9 @@ import subprocess
 import sys
 import urllib.request
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "gtm" / "scripts"))
+from marketing_state import state_root  # noqa: E402  (the plugin's shared state-store resolver)
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 # Lines that change on every fetch and would make every page look "changed".
@@ -77,7 +80,7 @@ def mention(text: str, term: str) -> bool:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--watch", default=".marketing/watch.json")
+    ap.add_argument("--watch", default=None, help="default <state>/watch.json")
     ap.add_argument("--only", default="", help="purpose to check (competitor, target, profile)")
     ap.add_argument("--add", default="", help="add a URL to the watch file and exit")
     ap.add_argument("--purpose", default="competitor")
@@ -86,7 +89,7 @@ def main() -> int:
     ap.add_argument("--no-treg", action="store_true", help="plain HTTP only")
     a = ap.parse_args()
 
-    wf = Path(a.watch)
+    wf = Path(a.watch or state_root() / "watch.json")
     items = json.loads(wf.read_text()) if wf.exists() else []
     if a.add:
         for it in items:

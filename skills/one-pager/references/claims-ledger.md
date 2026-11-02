@@ -1,6 +1,6 @@
 # The claims ledger
 
-`.marketing/claims.md` is the single list of what marketing may say about the product. Every
+`<state>/claims.md` is the single list of what marketing may say about the product. Every
 skill in this plugin reads it. It is built from the repo, because code is the ground truth and
 roadmaps, decks and old strategy docs are not.
 

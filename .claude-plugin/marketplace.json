@@ -1,12 +1,15 @@
 {
   "name": "marketing-skills",
-  "owner": { "name": "William Smith" },
+  "description": "Marketing skills for coding agents: a growth operator that finds the funnel's bottleneck, works the channels that fit the product, and measures every change.",
+  "owner": {
+    "name": "William Smith"
+  },
   "plugins": [
     {
       "name": "marketing",
       "source": "./",
       "description": "Growth operator (gtm) plus agent-discoverability skills: ai-visibility-audit, ai-search-optimization, one-pager, citation-outreach, entity-presence, comparison-pages.",
-      "version": "0.3.0"
+      "version": "0.4.0"
     }
   ]
 }

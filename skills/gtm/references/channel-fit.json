@@ -1,0 +1,555 @@
+{
+  "_doc": "Default channel fit by sales motion (0-1), the economics floors, and the tactics each channel is worked through. Read by gtm.py fit and gtm.py next. Explained in channel-fit.md. Values are starting estimates (checked 2026-11-01) that each product's closed bets overrule. A tactic's `tracks` says which tracks it moves; `next` offers it only there.",
+  "motions": [
+    "self_serve",
+    "sales_assisted",
+    "enterprise",
+    "consumer_app",
+    "ecommerce",
+    "oss_devtool"
+  ],
+  "defaults": {
+    "gross_margin": 0.8,
+    "payback_target_months": 18,
+    "min_fit": 0.25,
+    "prior_weight_bets": 3,
+    "slow_cycle_days": 90
+  },
+  "channels": {
+    "ai_search": {
+      "label": "AI search and comparison pages",
+      "tracks": [
+        "discoverability"
+      ],
+      "cost_floor_usd": 0,
+      "fast_feedback": false,
+      "matrix": {
+        "self_serve": 0.8,
+        "sales_assisted": 0.9,
+        "enterprise": 0.9,
+        "consumer_app": 0.6,
+        "ecommerce": 0.6,
+        "oss_devtool": 0.9
+      },
+      "tactics": {
+        "access_fix": {
+          "skill": "ai-search-optimization",
+          "label": "Let AI search and user bots read the site",
+          "tracks": [
+            "discoverability"
+          ]
+        },
+        "entity_fix": {
+          "skill": "entity-presence",
+          "label": "Fix how assistants identify the product",
+          "tracks": [
+            "discoverability"
+          ]
+        },
+        "answer_page": {
+          "skill": "one-pager",
+          "label": "Answer page for a lost prompt",
+          "tracks": [
+            "discoverability"
+          ]
+        },
+        "comparison_page": {
+          "skill": "comparison-pages",
+          "label": "Sourced comparison or alternatives page",
+          "tracks": [
+            "discoverability"
+          ]
+        },
+        "citation_outreach": {
+          "skill": "citation-outreach",
+          "label": "Get onto pages assistants already cite",
+          "tracks": [
+            "discoverability"
+          ]
+        }
+      }
+    },
+    "seo_content": {
+      "label": "SEO content",
+      "tracks": [
+        "demand"
+      ],
+      "cost_floor_usd": 0,
+      "fast_feedback": false,
+      "matrix": {
+        "self_serve": 0.8,
+        "sales_assisted": 0.7,
+        "enterprise": 0.5,
+        "consumer_app": 0.5,
+        "ecommerce": 0.8,
+        "oss_devtool": 0.8
+      },
+      "tactics": {
+        "technical_fix": {
+          "skill": "seo",
+          "label": "Fix crawl, index and canonical problems",
+          "tracks": [
+            "demand"
+          ]
+        },
+        "query_gap_page": {
+          "skill": "content",
+          "label": "Page for a query the map has no page for",
+          "tracks": [
+            "demand"
+          ]
+        },
+        "striking_distance": {
+          "skill": "seo",
+          "label": "Improve a page ranking 8-20",
+          "tracks": [
+            "demand"
+          ]
+        },
+        "integration_page": {
+          "skill": "content",
+          "label": "Integration or use-case page",
+          "tracks": [
+            "demand"
+          ]
+        }
+      }
+    },
+    "review_communities": {
+      "label": "Review sites and communities (G2, Reddit, forums, Stack Overflow)",
+      "tracks": [
+        "discoverability",
+        "demand"
+      ],
+      "cost_floor_usd": 0,
+      "fast_feedback": false,
+      "matrix": {
+        "self_serve": 0.6,
+        "sales_assisted": 0.8,
+        "enterprise": 0.7,
+        "consumer_app": 0.4,
+        "ecommerce": 0.6,
+        "oss_devtool": 0.8
+      },
+      "tactics": {
+        "profile_complete": {
+          "skill": "entity-presence",
+          "label": "Complete and correct directory and review profiles",
+          "tracks": [
+            "discoverability"
+          ]
+        },
+        "review_requests": {
+          "skill": "lifecycle",
+          "label": "Ask happy customers for reviews",
+          "tracks": [
+            "discoverability",
+            "demand"
+          ]
+        },
+        "community_answers": {
+          "skill": "social",
+          "label": "Draft helpful answers in threads buyers read",
+          "tracks": [
+            "demand",
+            "discoverability"
+          ]
+        }
+      }
+    },
+    "outbound": {
+      "label": "Outbound to named accounts",
+      "tracks": [
+        "demand"
+      ],
+      "cost_floor_usd": 1500,
+      "fast_feedback": true,
+      "matrix": {
+        "self_serve": 0.1,
+        "sales_assisted": 0.7,
+        "enterprise": 0.9,
+        "consumer_app": 0.0,
+        "ecommerce": 0.0,
+        "oss_devtool": 0.3
+      },
+      "tactics": {
+        "signal_sequence": {
+          "skill": "outbound",
+          "label": "Sequence to accounts showing a buying signal",
+          "tracks": [
+            "demand"
+          ]
+        },
+        "account_research_pack": {
+          "skill": "outbound",
+          "label": "Research pack and first touch for target accounts",
+          "tracks": [
+            "demand"
+          ]
+        }
+      }
+    },
+    "linkedin_organic": {
+      "label": "LinkedIn organic (founder, thought leadership)",
+      "tracks": [
+        "demand"
+      ],
+      "cost_floor_usd": 0,
+      "fast_feedback": true,
+      "matrix": {
+        "self_serve": 0.4,
+        "sales_assisted": 0.7,
+        "enterprise": 0.8,
+        "consumer_app": 0.1,
+        "ecommerce": 0.1,
+        "oss_devtool": 0.4
+      },
+      "tactics": {
+        "founder_posts": {
+          "skill": "social",
+          "label": "Founder posts built on one idea each",
+          "tracks": [
+            "demand"
+          ]
+        },
+        "document_post": {
+          "skill": "creative",
+          "label": "Diagram or document post from a page or launch",
+          "tracks": [
+            "demand"
+          ]
+        }
+      }
+    },
+    "short_video": {
+      "label": "Short-form video and UGC (TikTok, Reels, Shorts)",
+      "tracks": [
+        "demand",
+        "paid"
+      ],
+      "cost_floor_usd": 0,
+      "fast_feedback": true,
+      "matrix": {
+        "self_serve": 0.5,
+        "sales_assisted": 0.2,
+        "enterprise": 0.05,
+        "consumer_app": 0.9,
+        "ecommerce": 0.9,
+        "oss_devtool": 0.2
+      },
+      "tactics": {
+        "ugc_hooks": {
+          "skill": "creative",
+          "label": "Batch of hook variants on one claim",
+          "tracks": [
+            "demand"
+          ]
+        },
+        "demo_clip": {
+          "skill": "creative",
+          "label": "Short product demo clip",
+          "tracks": [
+            "demand"
+          ]
+        }
+      }
+    },
+    "long_video": {
+      "label": "Long-form video (YouTube demos and tutorials)",
+      "tracks": [
+        "demand"
+      ],
+      "cost_floor_usd": 0,
+      "fast_feedback": false,
+      "matrix": {
+        "self_serve": 0.6,
+        "sales_assisted": 0.6,
+        "enterprise": 0.5,
+        "consumer_app": 0.5,
+        "ecommerce": 0.5,
+        "oss_devtool": 0.7
+      },
+      "tactics": {
+        "tutorial_video": {
+          "skill": "creative",
+          "label": "Tutorial for a job buyers search for",
+          "tracks": [
+            "demand"
+          ]
+        }
+      }
+    },
+    "creators": {
+      "label": "Creators and influencers",
+      "tracks": [
+        "demand"
+      ],
+      "cost_floor_usd": 200,
+      "fast_feedback": true,
+      "matrix": {
+        "self_serve": 0.5,
+        "sales_assisted": 0.3,
+        "enterprise": 0.1,
+        "consumer_app": 0.8,
+        "ecommerce": 0.8,
+        "oss_devtool": 0.5
+      },
+      "tactics": {
+        "creator_outreach": {
+          "skill": "outbound",
+          "label": "Shortlist and pitch creators whose audience matches",
+          "tracks": [
+            "demand"
+          ]
+        }
+      }
+    },
+    "pr": {
+      "label": "PR and press",
+      "tracks": [
+        "discoverability",
+        "demand"
+      ],
+      "cost_floor_usd": 1000,
+      "fast_feedback": false,
+      "matrix": {
+        "self_serve": 0.4,
+        "sales_assisted": 0.5,
+        "enterprise": 0.6,
+        "consumer_app": 0.5,
+        "ecommerce": 0.4,
+        "oss_devtool": 0.4
+      },
+      "tactics": {
+        "data_story": {
+          "skill": "citation-outreach",
+          "label": "Pitch a finding or dataset to editors",
+          "tracks": [
+            "discoverability",
+            "demand"
+          ]
+        }
+      }
+    },
+    "partnerships": {
+      "label": "Partnerships, integrations and marketplaces",
+      "tracks": [
+        "demand"
+      ],
+      "cost_floor_usd": 0,
+      "fast_feedback": false,
+      "matrix": {
+        "self_serve": 0.6,
+        "sales_assisted": 0.7,
+        "enterprise": 0.7,
+        "consumer_app": 0.3,
+        "ecommerce": 0.4,
+        "oss_devtool": 0.8
+      },
+      "tactics": {
+        "marketplace_listing": {
+          "skill": "entity-presence",
+          "label": "Listing in an integration marketplace",
+          "tracks": [
+            "demand"
+          ]
+        },
+        "partner_pitch": {
+          "skill": "citation-outreach",
+          "label": "Co-marketing pitch to a partner",
+          "tracks": [
+            "demand"
+          ]
+        }
+      }
+    },
+    "paid_search": {
+      "label": "Paid search",
+      "tracks": [
+        "paid"
+      ],
+      "cost_floor_usd": 400,
+      "fast_feedback": true,
+      "matrix": {
+        "self_serve": 0.6,
+        "sales_assisted": 0.6,
+        "enterprise": 0.3,
+        "consumer_app": 0.4,
+        "ecommerce": 0.8,
+        "oss_devtool": 0.3
+      },
+      "tactics": {
+        "search_campaign": {
+          "skill": "paid",
+          "label": "High-intent search campaign under a cap",
+          "tracks": [
+            "paid"
+          ]
+        }
+      }
+    },
+    "paid_social": {
+      "label": "Paid social",
+      "tracks": [
+        "paid"
+      ],
+      "cost_floor_usd": 300,
+      "fast_feedback": true,
+      "matrix": {
+        "self_serve": 0.5,
+        "sales_assisted": 0.4,
+        "enterprise": 0.3,
+        "consumer_app": 0.8,
+        "ecommerce": 0.8,
+        "oss_devtool": 0.2
+      },
+      "tactics": {
+        "creative_test": {
+          "skill": "paid",
+          "label": "Test approved creatives under a cap",
+          "tracks": [
+            "paid"
+          ]
+        }
+      }
+    },
+    "lifecycle_email": {
+      "label": "Lifecycle email (to the product's own users)",
+      "tracks": [
+        "conversion",
+        "retention"
+      ],
+      "cost_floor_usd": 0,
+      "fast_feedback": true,
+      "matrix": {
+        "self_serve": 0.9,
+        "sales_assisted": 0.7,
+        "enterprise": 0.5,
+        "consumer_app": 0.8,
+        "ecommerce": 0.9,
+        "oss_devtool": 0.6
+      },
+      "tactics": {
+        "onboarding_flow": {
+          "skill": "lifecycle",
+          "label": "Onboarding emails toward activation",
+          "tracks": [
+            "conversion"
+          ]
+        },
+        "save_flow": {
+          "skill": "lifecycle",
+          "label": "Cancel and win-back flow",
+          "tracks": [
+            "retention"
+          ]
+        },
+        "dunning": {
+          "skill": "lifecycle",
+          "label": "Failed-payment recovery",
+          "tracks": [
+            "retention"
+          ]
+        }
+      }
+    },
+    "referral": {
+      "label": "Referral program",
+      "tracks": [
+        "retention"
+      ],
+      "cost_floor_usd": 0,
+      "fast_feedback": false,
+      "matrix": {
+        "self_serve": 0.6,
+        "sales_assisted": 0.4,
+        "enterprise": 0.2,
+        "consumer_app": 0.7,
+        "ecommerce": 0.7,
+        "oss_devtool": 0.4
+      },
+      "tactics": {
+        "referral_program": {
+          "skill": "lifecycle",
+          "label": "Referral offer and prompts",
+          "tracks": [
+            "retention"
+          ]
+        }
+      }
+    },
+    "on_site": {
+      "label": "The product's own site and app",
+      "tracks": [
+        "conversion",
+        "measurement"
+      ],
+      "cost_floor_usd": 0,
+      "fast_feedback": true,
+      "matrix": {
+        "self_serve": 1.0,
+        "sales_assisted": 1.0,
+        "enterprise": 1.0,
+        "consumer_app": 1.0,
+        "ecommerce": 1.0,
+        "oss_devtool": 1.0
+      },
+      "tactics": {
+        "tracking_fix": {
+          "skill": "measurement",
+          "label": "Fix or add conversion tracking",
+          "tracks": [
+            "measurement"
+          ]
+        },
+        "page_cro": {
+          "skill": "cro",
+          "label": "Change a landing or pricing page",
+          "tracks": [
+            "conversion"
+          ]
+        },
+        "signup_flow": {
+          "skill": "activation",
+          "label": "Remove friction from signup",
+          "tracks": [
+            "conversion"
+          ]
+        },
+        "onboarding_change": {
+          "skill": "activation",
+          "label": "Shorten the path to the first value moment",
+          "tracks": [
+            "conversion"
+          ]
+        },
+        "paywall_change": {
+          "skill": "activation",
+          "label": "Change the upgrade moment or paywall",
+          "tracks": [
+            "conversion"
+          ]
+        },
+        "price_test": {
+          "skill": "experiments",
+          "label": "Test price or packaging",
+          "tracks": [
+            "conversion"
+          ]
+        }
+      }
+    }
+  },
+  "compliance": {
+    "_doc": "Multiplier by the profile's `regulated` value. Channels not listed are 1.0.",
+    "heavy": {
+      "short_video": 0.5,
+      "creators": 0.4,
+      "paid_social": 0.6,
+      "outbound": 0.8
+    },
+    "light": {
+      "creators": 0.8
+    }
+  }
+}

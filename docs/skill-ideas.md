@@ -1,18 +1,18 @@
 # Skill backlog
 
-Built: `ai-visibility-audit`, `ai-search-optimization`, `one-pager`, `citation-outreach`,
-`entity-presence`, `comparison-pages`, `gtm` (entry point; design in its SKILL.md).
+Built: `gtm` (entry point), `product-context`, `writing`, `ai-visibility-audit`,
+`ai-search-optimization`, `one-pager`, `citation-outreach`, `entity-presence`, `comparison-pages`.
 
-## Next
-- `ai-referral-dashboard`: GA4, Search Console, PostHog and CDN bot logs through treg-connected
-  accounts, set next to panel visibility per landing page. Rung 4 of the ladder.
-- `claims-guard`: the one-pager's claims gate as a standalone linter and hook for any copy.
+The rest of the roadmap is in [`design/growth-operator.md`](design/growth-operator.md), section 12
+(skills) and section 13 (phases). Ideas from the earlier backlog and where they went:
+
+- `ai-referral-dashboard` → the `measurement` skill and PostHog (phase 2).
+- `claims-guard` → the `writing` skill's claims gate (phase 1).
+- `launch-kit` → gtm's launch mode and daily `launch_scan` (built).
+- Short-form video → the `creative` skill, using treg's `make-ugc` (phase 3).
+- `lead-signals` routing → the `outbound` skill (phase 3).
+- Paid search and ads-library monitoring → `competitive-intel` and `paid` (phases 3 and 5).
+
+## Not yet in the spec
 - `docs-for-agents`: for devtools. llms-full.txt, Markdown mirrors, OpenAPI, an MCP stub, and an
   AGENTS.md integration guide. Measured by whether agents can complete a "use <product> to do X" task.
-- `launch-kit`: a merged feature becomes an updated claims ledger, a page if it answers an intent,
-  feed updates, posts, and new panel prompts.
-
-## Later (other marketing tracks)
-- Short-form video via the treg `make-ugc` skill, wired to the profile.
-- `lead-signals` integration: route people complaining about the problem to sales.
-- Paid search and ads-library competitive monitoring.

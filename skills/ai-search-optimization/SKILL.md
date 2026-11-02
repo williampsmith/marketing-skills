@@ -15,6 +15,10 @@ site from zero to most of its traffic coming from ChatGPT), expanded with what i
 Implement the steps in order. Report what you changed, and flag anything that needs a human
 decision: existing robots rules, CDN settings, analytics, domain-specific copy.
 
+`<state>` below is the marketing state directory printed by `python3 ../gtm/scripts/gtm.py where`
+(field `root`). It lives outside the product repo by default; site changes still go to the product
+repo as PRs.
+
 ## Before you touch anything
 
 1. **Find the site.** In a product repo it may be a subdirectory (`site/`, `web/`, `apps/www`,
@@ -28,7 +32,7 @@ decision: existing robots rules, CDN settings, analytics, domain-specific copy.
    It reports robots.txt per bot, what the server returns to each bot's user agent (403s, CDN
    challenges), llms.txt, sitemap, and per page: words in raw HTML, JSON-LD types, modified date,
    noindex.
-3. **Measure.** If `.marketing/runs/` has no recent run, offer the `ai-visibility-audit` skill first.
+3. **Measure.** If `<state>/runs/` has no recent run, offer the `ai-visibility-audit` skill first.
    Without a before measurement you can't tell whether any of this worked.
 4. **Check intent.** A `Disallow: /` or `noindex` may be deliberate (a pre-launch, staging or trial
    host). **Ask before opening a site that blocks everything.** Never change it silently.
@@ -127,7 +131,7 @@ On each key page, especially pages aimed at a specific question:
   the same date in the schema.
 - **One page per intent.** A focused page answering one question gets cited; a long page covering
   many topics gets skimmed. Creating these is the `one-pager` skill's job. This step finds the
-  gaps and lists them in `.marketing/pages.md`.
+  gaps and lists them in `<state>/pages.md`.
 - **Main content in the initial HTML** (server-rendered or static). The checker's `words` column
   flags client-rendered pages (fewer than 150 words in the raw HTML).
 - Question-shaped H2s, tables for comparisons, short paragraphs, and outbound citations to primary

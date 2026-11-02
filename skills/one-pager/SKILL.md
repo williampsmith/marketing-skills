@@ -1,6 +1,6 @@
 ---
 name: one-pager
-description: Research, write and ship a single-intent "one-pager" answer article for a product's website, built to be cited by AI answer engines (ChatGPT, Perplexity, Google AI Mode, Claude). Run inside the product repo; it reads the code and docs as ground truth for every product claim, uses treg to find the intent and see what the engines currently answer and cite, writes a dated quick-answer page with matching JSON-LD, and wires it into the site, sitemap, llms.txt and feed. Use when the user asks for a one-pager, answer page, AEO/GEO article, comparison page, "write a page so ChatGPT recommends us for X", or to work the backlog in .marketing/pages.md.
+description: Research, write and ship a single-intent "one-pager" answer article for a product's website, built to be cited by AI answer engines (ChatGPT, Perplexity, Google AI Mode, Claude). Run inside the product repo; it reads the code and docs as ground truth for every product claim, uses treg to find the intent and see what the engines currently answer and cite, writes a dated quick-answer page with matching JSON-LD, and wires it into the site, sitemap, llms.txt and feed. Use when the user asks for a one-pager, answer page, AEO/GEO article, comparison page, "write a page so ChatGPT recommends us for X", or to work the backlog in <state>/pages.md.
 ---
 
 # One-pager
@@ -15,21 +15,28 @@ fits, in a separate section at the end.
 
 Arguments: an intent or question, a prompt id from the panel, or nothing (pick from the backlog).
 
+`<state>` below is the marketing state directory printed by `python3 ../gtm/scripts/gtm.py where`
+(field `root`). It lives outside the product repo by default; site changes still go to the product
+repo as PRs.
+
+Copy this skill drafts passes the `../writing` gates first: every claim from the ledger, something
+the current top answers lack, and no AI-tell phrasing.
+
 ## Requires
 
 - treg (CLI or MCP) for research. Without it, use built-in web search and fetch, and say the gap
   analysis was skipped.
-- `.marketing/profile.md` (positioning, ICP, competitors). If it's missing, draft it from the repo
-  and confirm it with the user, as described in the `ai-visibility-audit` skill.
-- Optional but valuable: a recent `.marketing/runs/*/score.json` (gaps, citation targets, fan-out).
+- `<state>/product-context.md` (positioning, ICP, competitors, voice). If it's missing, run the
+  `../product-context` skill first.
+- Optional but valuable: a recent `<state>/runs/*/score.json` (gaps, citation targets, fan-out).
 
 ## The pipeline
 
-Work through the phases in order. Write intermediate output to `.marketing/pages/<slug>/` so the
+Work through the phases in order. Write intermediate output to `<state>/pages/<slug>/` so the
 user can review it, and so the next run can refresh the page instead of starting over.
 
 ```
-.marketing/pages/<slug>/
+<state>/pages/<slug>/
   brief.md        intent, prompts, angle, outline (phase 1-3)
   recon.json      engine answers + cited sources for the target prompts (phase 2)
   evidence.md     external facts with URLs, read and checked (phase 3)
@@ -38,7 +45,7 @@ user can review it, and so the next run can refresh the page instead of starting
 
 ### Phase 0 — Ground truth: the claims ledger
 
-Before any research, build or refresh `.marketing/claims.md` from the repo: what the product
+Before any research, build or refresh `<state>/claims.md` from the repo: what the product
 demonstrably does, what it does not do, and the caveats. Each row cites a file or doc. Method and
 format: `references/claims-ledger.md`.
 
@@ -56,7 +63,7 @@ Pick the intent in this order of preference:
 
 1. The user's argument.
 2. A gap from the latest audit: a prompt where competitors are named and the brand is not, in a
-   bucket where the product honestly fits. These are already listed in `.marketing/pages.md`.
+   bucket where the product honestly fits. These are already listed in `<state>/pages.md`.
 3. Mine fresh candidates with treg. Recipes are in `references/research-with-treg.md`: keyword
    ideas, People-Also-Ask, Reddit/forum questions, and ChatGPT fan-out queries.
 
@@ -149,9 +156,9 @@ components, CSS, URL scheme. Then:
 
 ### Phase 7 — Measure
 
-- Add the target prompts to `.marketing/prompt-panel.json` with `"page": "<url>"` (new ids, never
+- Add the target prompts to `<state>/prompt-panel.json` with `"page": "<url>"` (new ids, never
   reuse old ones) so the next audit tracks the page.
-- Mark the intent `shipped <date>` in `.marketing/pages.md`.
+- Mark the intent `shipped <date>` in `<state>/pages.md`.
 - Suggest re-running recon on the target prompts 2-3 weeks after deploy. If the page isn't cited by
   then, check indexing first (Bing Webmaster, Search Console) before rewriting.
 

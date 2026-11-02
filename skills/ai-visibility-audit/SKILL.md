@@ -1,6 +1,6 @@
 ---
 name: ai-visibility-audit
-description: Measure how AI answer engines (ChatGPT, Perplexity, Google AI Mode, Gemini, Claude) talk about a product - whether they name it, cite its site, who they name instead, and which sources they cite - using a fixed prompt panel run through treg. Use when the user asks about AI visibility, AEO/GEO, LLM share of voice, "does ChatGPT recommend us", tracking AI search over time, or before and after ai-search-optimization or one-pager work. Writes a dated scoreboard to .marketing/runs/ that later runs diff against.
+description: Measure how AI answer engines (ChatGPT, Perplexity, Google AI Mode, Gemini, Claude) talk about a product - whether they name it, cite its site, who they name instead, and which sources they cite - using a fixed prompt panel run through treg. Use when the user asks about AI visibility, AEO/GEO, LLM share of voice, "does ChatGPT recommend us", tracking AI search over time, or before and after ai-search-optimization or one-pager work. Writes a dated scoreboard to <state>/runs/ that later runs diff against.
 ---
 
 # AI visibility audit
@@ -26,25 +26,25 @@ otherwise follow https://treg.to/llms.txt). Batch runs use the **treg CLI** thro
 Use MCP `catalog_search` / `catalog_get` for discovery and pricing, and MCP `call` for a single
 spot check.
 
-## State in the product repo
+## State
 
-Everything lives in `.marketing/` at the product repo root. Commit it; the history is the trend line.
+Everything lives in the marketing state store, `<state>`: the directory printed by
+`python3 ../gtm/scripts/gtm.py where` (field `root`), outside the product repo by default. The
+dated runs are the trend line; keep them.
 
 ```
-.marketing/
-  profile.md            positioning, ICP, category words, proof points (shared by all skills)
+<state>/
+  product-context.md    positioning, ICP, category words, proof points (owned by ../product-context)
   prompt-panel.json     brand + aliases + domains, competitors, engines, prompts
   runs/<YYYY-MM-DD>/    answers.jsonl, raw/, score.json, report.md
 ```
 
 ## The run
 
-### 1. Bootstrap the profile (first run only)
+### 1. Product context (first run only)
 
-If `.marketing/profile.md` is missing, write it from the repo (README, docs, site copy,
-pricing) and confirm it with the user. Keep it to one screen: product in one sentence, the
-category words a buyer would type, the ICP, 3-5 competitors with domains, proof points that
-the code supports, and things never to claim.
+If `<state>/product-context.md` is missing, run the `../product-context` skill first. The panel
+needs its category words, ICP, competitors with domains, and the claims it may and may not make.
 
 ### 2. Build the prompt panel (first run, then rarely)
 
@@ -86,7 +86,7 @@ counts as won on an engine if any sample names you). Keep `country` fixed betwee
 ### 4. Score it
 
 ```bash
-python3 <skill>/scripts/score_panel.py .marketing/runs/<today> --previous .marketing/runs/<last>
+python3 <skill>/scripts/score_panel.py <state>/runs/<today> --previous <state>/runs/<last>
 ```
 
 This writes `score.json` and `report.md`. Matching is word-bounded and case-insensitive on
@@ -107,11 +107,12 @@ Turn the report into actions. Each finding goes to the skill that fixes it:
 | One engine far behind the rest | engine-specific access or index issue | check that bot in `ai-search-optimization` (Bing index feeds ChatGPT and Copilot) |
 
 Write the top 3-5 actions at the end of `report.md` with the prompt ids they target, and
-add the gap intents to `.marketing/pages.md` (the one-pager backlog).
+add the gap intents to `<state>/pages.md` (the one-pager backlog).
 
 ### 6. Close the loop
 
-- Commit `.marketing/`.
+- Keep the run in `<state>/runs/`. On the git backend, `gtm.py sync push` saves it; the gtm skill
+  does this at the end of every run.
 - Offer to schedule it weekly with whatever scheduler the agent has (Claude Code `/schedule`,
   Hermes cron, a CI cron running the scripts), always with the same panel and a `--max-usd` ceiling. Engines take days to weeks to reflect site changes, so check the trend
   over several runs rather than reacting to one.

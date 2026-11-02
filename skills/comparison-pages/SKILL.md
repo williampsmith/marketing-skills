@@ -18,18 +18,25 @@ advertising). Or they're **stale**: the competitor changes pricing or ships the 
 your page is now wrong. This skill exists for those two failure modes. The writing itself is the
 `one-pager` pipeline.
 
+`<state>` below is the marketing state directory printed by `python3 ../gtm/scripts/gtm.py where`
+(field `root`). It lives outside the product repo by default; site changes still go to the product
+repo as PRs.
+
+Copy this skill drafts passes the `../writing` gates first: every claim from the ledger, something
+the current top answers lack, and no AI-tell phrasing.
+
 ## Requires
 
-- `.marketing/profile.md`, `.marketing/claims.md` (your side of every comparison)
+- `<state>/product-context.md`, `<state>/claims.md` (your side of every comparison)
 - The `one-pager` skill (drafting, review gates, shipping) and a recent audit run if available
 - treg for competitor research (mostly free page reads; a few cents for ads and reviews)
 
 ## State
 
 ```
-.marketing/competitors/<slug>.md   dossier: sourced facts with URL + date + quote
-.marketing/watch.json              competitor source pages, each mapped to the pages that cite it
-.marketing/pages/<slug>/           as in one-pager, plus grid.md (the sourced comparison grid)
+<state>/competitors/<slug>.md   dossier: sourced facts with URL + date + quote
+<state>/watch.json              competitor source pages, each mapped to the pages that cite it
+<state>/pages/<slug>/           as in one-pager, plus grid.md (the sourced comparison grid)
 ```
 
 ## The run
@@ -52,7 +59,7 @@ Choose the page type:
 
 ### 2. Build or refresh the dossier
 
-`.marketing/competitors/<slug>.md`. Every line has a source URL, an access date, and a quote. See
+`<state>/competitors/<slug>.md`. Every line has a source URL, an access date, and a quote. See
 `references/dossier-template.md`.
 
 - **Their own pages**: pricing, features, security and privacy, docs, changelog, system requirements
@@ -117,7 +124,7 @@ The scheduled run (or `gtm weekly`) runs:
 python3 <skill>/scripts/watch_pages.py --only competitor
 ```
 
-For each `CHANGED` competitor page, read the diff in `.marketing/watch/report.md`. If a fact in the
+For each `CHANGED` competitor page, read the diff in `<state>/watch/report.md`. If a fact in the
 grid moved (price, plan, feature, platform), update the dossier and grid, revise the affected pages
 listed in `used_by`, bump `dateModified`, and open a PR. Cosmetic changes need nothing.
 Re-verify every comparison page at least quarterly even if no change was detected, because watchers

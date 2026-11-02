@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Score a panel run: mentions, citations, share of voice, gaps, citation targets.
 
-    python3 score_panel.py .marketing/runs/2026-10-31            # writes score.json + report.md there
-    python3 score_panel.py RUN_DIR --previous .marketing/runs/2026-10-24
+    python3 score_panel.py <state>/runs/2026-10-31            # writes score.json + report.md there
+    python3 score_panel.py RUN_DIR --previous <state>/runs/2026-10-24
 
 Brand and competitors come from the panel file (`brand`, `competitors`).
 Deterministic and stdlib only, so two runs are comparable week to week.
@@ -16,6 +16,9 @@ import re
 import sys
 from pathlib import Path
 from urllib.parse import urlparse
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "gtm" / "scripts"))
+from marketing_state import state_root  # noqa: E402  (the plugin's shared state-store resolver)
 
 
 def _alias_re(aliases: list[str]) -> re.Pattern:
@@ -194,10 +197,11 @@ def report(s: dict, d: dict | None, run: str) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run_dir")
-    ap.add_argument("--panel", default=".marketing/prompt-panel.json")
+    ap.add_argument("--panel", default=None, help="default <state>/prompt-panel.json")
     ap.add_argument("--previous", default=None, help="earlier run dir to diff against")
     a = ap.parse_args()
     run = Path(a.run_dir)
+    a.panel = a.panel or str(state_root() / "prompt-panel.json")
     panel = json.loads(Path(a.panel).read_text())
     s = score(load_answers(run), panel)
     d = None

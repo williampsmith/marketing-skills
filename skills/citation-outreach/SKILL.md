@@ -18,20 +18,27 @@ are against the FTC endorsement guides and the 2024 fake-review rule, and agains
 Moderators, editors and increasingly the engines themselves discount them anyway. Every message is
 honest, disclosed, and useful to the recipient's readers whether or not they name you.
 
+`<state>` below is the marketing state directory printed by `python3 ../gtm/scripts/gtm.py where`
+(field `root`). It lives outside the product repo by default; site changes still go to the product
+repo as PRs.
+
+Copy this skill drafts passes the `../writing` gates first: every claim from the ledger, something
+the current top answers lack, and no AI-tell phrasing.
+
 ## Requires
 
-- A recent `ai-visibility-audit` run (`.marketing/runs/<date>/answers.jsonl`), plus
-  `.marketing/profile.md` and `.marketing/claims.md` (pitches make claims, so the ledger gates them).
+- A recent `ai-visibility-audit` run (`<state>/runs/<date>/answers.jsonl`), plus
+  `<state>/product-context.md` and `<state>/claims.md` (pitches make claims, so the ledger gates them).
 - treg for reading pages (free), contact finding (paid, verified), and Reddit and backlink lookups.
 
 ## State
 
 ```
-.marketing/outreach/
+<state>/outreach/
   targets.json        ranked cited URLs + status (script-managed, status preserved across runs)
   <target-slug>.md    triage notes + the draft for one target
   tracker.md          one line per target: status, owner, dates, outcome
-.marketing/watch.json targets you pitched, watched for a mention (shared with other skills)
+<state>/watch.json targets you pitched, watched for a mention (shared with other skills)
 ```
 
 ## The run
@@ -39,7 +46,7 @@ honest, disclosed, and useful to the recipient's readers whether or not they nam
 ### 1. Rank the targets
 
 ```bash
-python3 <skill>/scripts/outreach_targets.py .marketing/runs/<latest> --top 30
+python3 <skill>/scripts/outreach_targets.py <state>/runs/<latest> --top 30
 ```
 
 The ranking weighs how often each URL was cited, on how many engines, and on how many prompts you
@@ -106,7 +113,7 @@ One file per target. Under 120 words for an email; a forum reply as long as the 
 - Subject: specific to their page ("Your 2026 PDF redaction roundup: one option missing that works offline").
 - First line: the exact page and what it gets right. No flattery.
 - What's missing and why it matters **to their readers**, with one checkable fact. Product claims
-  must be OK rows in `.marketing/claims.md`, copied with their qualifiers.
+  must be OK rows in `<state>/claims.md`, copied with their qualifiers.
 - What you offer: a test result, data, a quote from a named person, a review license.
 - Disclosure: who you are and that it's your product.
 - No reciprocal links, no payment offers, no follow-up threats. One follow-up after about 10 days, at most.

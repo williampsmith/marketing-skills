@@ -1,0 +1,59 @@
+name: evals
+
+# Skill evals call a model, so they cost money: manual runs only, with a hard cost ceiling.
+# Needs the ANTHROPIC_API_KEY repository secret.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Run cases with this tag (smoke = the cheap set)"
+        default: smoke
+      max_cost_usd:
+        description: "Stop starting new runs past this estimated cost"
+        default: "3"
+      model:
+        description: "Agent model (pinned so a model rollout isn't mistaken for a regression)"
+        default: claude-sonnet-5-5
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evals
+  cancel-in-progress: false
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Sandbox for granted Bash
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap socat
+      - name: Run evals
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          npx -y @anthropic-ai/claude-code@2.1.316 plugin eval . \
+            --trust-plugin \
+            --allow-tools "Bash(python3 *)" \
+            --tag "${{ inputs.tag }}" \
+            --ablation none \
+            --runs 1 \
+            --model "${{ inputs.model }}" \
+            --threshold 0.8 \
+            --no-publish \
+            --max-cost-usd "${{ inputs.max_cost_usd }}" \
+            --json results.json
+      - name: Keep results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: |
+            results.json
+            evals/results/
+          if-no-files-found: ignore

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Rank the exact pages AI engines cite on prompts where we lose.
 
-    python3 outreach_targets.py .marketing/runs/2026-10-31
-    python3 outreach_targets.py RUN_DIR --top 40 --out .marketing/outreach/targets.json
+    python3 outreach_targets.py <state>/runs/2026-10-31
+    python3 outreach_targets.py RUN_DIR --top 40 --out <state>/outreach/targets.json
 
 Reads answers.jsonl from an ai-visibility-audit run plus the panel's brand and
 competitors. A cited URL scores higher when it is cited more often, on more
@@ -22,6 +22,9 @@ import re
 import sys
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "gtm" / "scripts"))
+from marketing_state import state_root  # noqa: E402  (the plugin's shared state-store resolver)
 
 BUCKET_WEIGHT = {"category": 3, "problem": 3, "jobs": 2, "comparison": 3, "alternatives": 3, "brand": 1}
 KIND_RULES = [
@@ -98,10 +101,12 @@ def build(answers: list[dict], panel: dict) -> list[dict]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run_dir")
-    ap.add_argument("--panel", default=".marketing/prompt-panel.json")
-    ap.add_argument("--out", default=".marketing/outreach/targets.json")
+    ap.add_argument("--panel", default=None, help="default <state>/prompt-panel.json")
+    ap.add_argument("--out", default=None, help="default <state>/outreach/targets.json")
     ap.add_argument("--top", type=int, default=30)
     a = ap.parse_args()
+    a.panel = a.panel or str(state_root() / "prompt-panel.json")
+    a.out = a.out or str(state_root() / "outreach" / "targets.json")
     panel = json.loads(Path(a.panel).read_text())
     answers = [json.loads(ln) for ln in (Path(a.run_dir) / "answers.jsonl").read_text().splitlines() if ln.strip()]
     ranked = [t for t in build(answers, panel) if t["lost_prompts"]][: a.top]
