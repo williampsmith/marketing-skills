@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Run a prompt panel across AI answer engines through the treg CLI.
 
-Reads .marketing/prompt-panel.json, calls every enabled engine for every prompt
+Reads <state>/prompt-panel.json, calls every enabled engine for every prompt
 (`treg --json call <endpoint> ...`), stores each raw response and appends one
-normalized line per answer to .marketing/runs/<date>/answers.jsonl.
+normalized line per answer to <state>/runs/<date>/answers.jsonl (<state>: `gtm.py where`).
 
 Stdlib only. Resumable: a (engine, prompt, sample) already in answers.jsonl is
 never called again, because every call bills.
@@ -26,6 +26,9 @@ import sys
 import tempfile
 import threading
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "gtm" / "scripts"))
+from marketing_state import state_root  # noqa: E402  (the plugin's shared state-store resolver)
 
 TEXT_KEYS = ("markdown", "text", "answer", "content", "response", "message")
 URL_KEYS = ("url", "link", "source_url", "uri", "href")
@@ -123,8 +126,8 @@ def _call(endpoint: str, body, headers: list[str], timeout: int) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--panel", default=".marketing/prompt-panel.json")
-    ap.add_argument("--out", default=None, help="run dir (default .marketing/runs/<today>)")
+    ap.add_argument("--panel", default=None, help="default <state>/prompt-panel.json")
+    ap.add_argument("--out", default=None, help="run dir (default <state>/runs/<today>)")
     ap.add_argument("--engines", default="", help="comma list; default every enabled engine")
     ap.add_argument("--prompts", default="", help="comma list of prompt ids; default all")
     ap.add_argument("--limit", type=int, default=0, help="only the first N prompts")
@@ -135,6 +138,7 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
 
+    a.panel = a.panel or str(state_root() / "prompt-panel.json")
     panel = json.loads(Path(a.panel).read_text())
     country = panel.get("country", "US")
     engines = {k: v for k, v in panel["engines"].items() if v.get("enabled", True)}

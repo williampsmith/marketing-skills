@@ -26,7 +26,7 @@ Discover each endpoint with `catalog_search "<job in plain words>"`, then `catal
 price. Typical costs are fractions of a cent to a few cents.
 
 1. **Keyword ideas** (`catalog_search "related keyword ideas"`, routed `treg.google.keywords.ideas`):
-   seed with the category words from `profile.md`. Keep the question-shaped and long-tail rows
+   seed with the category words from `<state>/product-context.md`. Keep the question-shaped and long-tail rows
    and drop pure navigational ones. Volume tells you which intents matter, not what to type.
 2. **People Also Ask + AI Overview** (routed `treg.google.serp.organic` with `ai_overview: true`):
    PAA questions are close to how people phrase assistant prompts.

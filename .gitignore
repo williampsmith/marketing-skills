@@ -2,3 +2,7 @@ __pycache__/
 *.pyc
 .DS_Store
 .marketing/
+
+# claude plugin eval output
+evals/results/
+evals/*/results/

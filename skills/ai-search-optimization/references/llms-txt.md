@@ -43,7 +43,7 @@ Rules:
 Each one-pager is added to it automatically. The best setup is a small build step that writes
 llms.txt (and llms-full.txt and feed.json) from the same content source as the pages, such as
 frontmatter `title`, `description`, `url`, `updated`, `section`. On a static site with no build,
-the `one-pager` skill appends its entry under `## Answers`. Either way, list the pages in one
+the `content` skill appends its entry under `## Answers`. Either way, list the pages in one
 place only.
 
 ## /llms-full.txt

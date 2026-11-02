@@ -1,18 +1,14 @@
 # Skill backlog
 
-Built: `ai-visibility-audit`, `ai-search-optimization`, `one-pager`, `citation-outreach`,
-`entity-presence`, `comparison-pages`, `gtm` (entry point; design in its SKILL.md).
+The growth-operator spec ([`design/growth-operator.md`](design/growth-operator.md)) is fully
+implemented as of 0.8: the state store, tracks, fit, focus and bets (0.4); measurement (0.5);
+customer research, competitive intel, SEO, content, outbound, creative and social (0.6); CRO,
+activation and experiments (0.7); lifecycle, paid, and bounded sending and spend authority (0.8).
 
 ## Next
-- `ai-referral-dashboard`: GA4, Search Console, PostHog and CDN bot logs through treg-connected
-  accounts, set next to panel visibility per landing page. Rung 4 of the ladder.
-- `claims-guard`: the one-pager's claims gate as a standalone linter and hook for any copy.
 - `docs-for-agents`: for devtools. llms-full.txt, Markdown mirrors, OpenAPI, an MCP stub, and an
   AGENTS.md integration guide. Measured by whether agents can complete a "use <product> to do X" task.
-- `launch-kit`: a merged feature becomes an updated claims ledger, a page if it answers an intent,
-  feed updates, posts, and new panel prompts.
-
-## Later (other marketing tracks)
-- Short-form video via the treg `make-ugc` skill, wired to the profile.
-- `lead-signals` integration: route people complaining about the problem to sales.
-- Paid search and ads-library competitive monitoring.
+- Reply handling: read the sending inbox (IMAP) so replies, bounces and complaints reach
+  `gtm.py outcome` and `suppression.csv` without a human relaying them.
+- CRM stages: pull qualified, meeting and won counts from the CRM, so sales-led funnels don't depend
+  on hand-recorded stage metrics.

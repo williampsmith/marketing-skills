@@ -1,5 +1,5 @@
 {
-  "_usage": "copy to .marketing/entity/probe-panel.json, fill brand/prompts, then: python3 <ai-visibility-audit>/scripts/run_panel.py --panel .marketing/entity/probe-panel.json --out .marketing/entity/probe-<date>  (engines checked 2026-11-01; verify with catalog_get)",
+  "_usage": "copy to <state>/entity/probe-panel.json, fill brand/prompts, then: python3 <ai-visibility-audit>/scripts/run_panel.py --panel <state>/entity/probe-panel.json --out <state>/entity/probe-<date>  (engines checked 2026-11-01; verify with catalog_get)",
   "country": "US",
   "samples": 1,
   "brand": {"name": "Acme Redact", "aliases": ["AcmeRedact"], "domains": ["acmeredact.com"]},

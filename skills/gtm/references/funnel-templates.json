@@ -1,0 +1,72 @@
+{
+  "_doc": "Funnel stages per sales motion. Each stage's metric is a 28-day count written by the measurement skill (gtm.py metric add stage:<id> N). floor_rate is the minimum conversion from the previous stage (or from the stage named in `from`), a benchmark-based default (checked 2026-11-01) that gtm.json `floors` overrides once the product has its own baseline. Read by gtm.py.",
+  "min_sample": 100,
+  "max_age_days": 7,
+  "templates": {
+    "self_serve": {
+      "north_star": "activated",
+      "stages": [
+        {"id": "visit", "track": "demand", "label": "visits"},
+        {"id": "signup", "track": "conversion", "label": "signups", "floor_rate": 0.02},
+        {"id": "activated", "track": "conversion", "label": "activated accounts", "floor_rate": 0.30},
+        {"id": "paid", "track": "conversion", "label": "paying accounts", "floor_rate": 0.05},
+        {"id": "retained", "track": "retention", "label": "retained after a month", "floor_rate": 0.85}
+      ],
+      "rungs": {"first_step": "signup", "activating": "activated", "paying": "paid"}
+    },
+    "sales_assisted": {
+      "north_star": "qualified",
+      "stages": [
+        {"id": "visit", "track": "demand", "label": "visits"},
+        {"id": "trial_or_demo", "track": "conversion", "label": "trial or demo requests", "floor_rate": 0.015},
+        {"id": "qualified", "track": "conversion", "label": "qualified opportunities", "floor_rate": 0.30},
+        {"id": "won", "track": "conversion", "label": "deals won", "floor_rate": 0.20},
+        {"id": "retained", "track": "retention", "label": "retained at renewal", "floor_rate": 0.85}
+      ],
+      "rungs": {"first_step": "trial_or_demo", "activating": "qualified", "paying": "won"}
+    },
+    "enterprise": {
+      "north_star": "opportunity",
+      "stages": [
+        {"id": "engaged_account", "track": "demand", "label": "target accounts engaged"},
+        {"id": "meeting", "track": "conversion", "label": "first meetings", "floor_rate": 0.05},
+        {"id": "opportunity", "track": "conversion", "label": "opportunities", "floor_rate": 0.40},
+        {"id": "won", "track": "conversion", "label": "deals won", "floor_rate": 0.20},
+        {"id": "expanded", "track": "retention", "label": "accounts expanded", "floor_rate": 0.20}
+      ],
+      "rungs": {"first_step": "meeting", "activating": "opportunity", "paying": "won"}
+    },
+    "consumer_app": {
+      "north_star": "retained_d30",
+      "stages": [
+        {"id": "visit", "track": "demand", "label": "store page or site visits"},
+        {"id": "install", "track": "conversion", "label": "installs", "floor_rate": 0.25},
+        {"id": "activated", "track": "conversion", "label": "activated users", "floor_rate": 0.40},
+        {"id": "paying", "track": "conversion", "label": "paying users", "floor_rate": 0.03},
+        {"id": "retained_d30", "track": "retention", "label": "retained at day 30", "floor_rate": 0.10, "from": "activated"}
+      ],
+      "rungs": {"first_step": "install", "activating": "activated", "paying": "paying"}
+    },
+    "ecommerce": {
+      "north_star": "purchase",
+      "stages": [
+        {"id": "visit", "track": "demand", "label": "visits"},
+        {"id": "add_to_cart", "track": "conversion", "label": "add to cart", "floor_rate": 0.05},
+        {"id": "purchase", "track": "conversion", "label": "purchases", "floor_rate": 0.30},
+        {"id": "repeat", "track": "retention", "label": "repeat purchases", "floor_rate": 0.20}
+      ],
+      "rungs": {"first_step": "add_to_cart", "activating": "purchase", "paying": "purchase"}
+    },
+    "oss_devtool": {
+      "north_star": "active_project",
+      "stages": [
+        {"id": "visit", "track": "demand", "label": "repo and docs visits"},
+        {"id": "install", "track": "conversion", "label": "installs", "floor_rate": 0.05},
+        {"id": "active_project", "track": "conversion", "label": "active projects", "floor_rate": 0.20},
+        {"id": "paid_or_lead", "track": "conversion", "label": "paid plans or enterprise leads", "floor_rate": 0.02},
+        {"id": "retained", "track": "retention", "label": "projects active after a month", "floor_rate": 0.50}
+      ],
+      "rungs": {"first_step": "install", "activating": "active_project", "paying": "paid_or_lead"}
+    }
+  }
+}

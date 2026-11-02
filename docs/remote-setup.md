@@ -2,7 +2,7 @@
 
 How to point this plugin at a product and leave it running unattended. There are two paths:
 **Claude Code** (a cloud routine, or a server you run) and **Hermes Agent** (a long-running agent
-on your own server). Both end in the same state: one daily `gtm tick` against the product repo,
+on your own server). Both end in the same state: one daily run of the `gtm` skill in tick mode against the product repo,
 with work arriving as PRs and drafts, and a digest telling a human what needs them.
 
 This is the high-level runbook. Mechanics for each host are in
@@ -13,65 +13,92 @@ This is the high-level runbook. Mechanics for each host are in
 | decision | recommendation |
 |---|---|
 | Which repo the agent works in | The product repo that holds the website source (or the site repo, if separate). It must be able to read the code to build the claims ledger. |
+| Where the state lives | Outside the product repo. A persistent host (Hermes VPS, your own server) uses the default `dir` store on that machine. An ephemeral host (Claude Code cloud routine) needs a private state repo, e.g. `<product>-marketing`. |
 | Who owns it | One named human who reviews PRs and sends drafts. The digest goes to them. |
-| Budget | $20/month of treg balance to start (`gtm init --budget 20`). Steady state is about $8-12. |
+| Budget | $20/month of treg balance to start (`gtm.py init --budget 20`). Steady state is about $8-12. |
 | Stage | `prelaunch` if the site is deliberately hidden from search; otherwise `launched`. |
-| Where digests go | The agent's chat (Hermes gateway) or a pinned GitHub issue. A file is always committed too. |
+| Where digests go | The agent's chat (Hermes gateway) or a pinned GitHub issue. A copy is always written to the state store. |
 
 ## 1. Accounts and credentials (least privilege)
 
 | what | why | scope it to |
 |---|---|---|
 | **treg** team + balance | all live data (AI answers, search, pages) | a team for this work, prepaid; per-run and monthly caps live in `gtm.json` |
-| **GitHub token** for a bot or machine user | clone, commit `.marketing/`, open PRs | **only the product repo**: contents + pull requests write. Fine-grained PAT or GitHub App. |
+| **GitHub token** for a bot or machine user | clone the product repo, push branches, open PRs; push the state repo if you use one | **only those repos**: contents + pull requests write. Fine-grained PAT or GitHub App. |
+| **PostHog Cloud** project (measurement) | funnel counts, attribution, the team's Growth dashboard | the project API key (`phc_`, send-only) and a personal API key (`phx_`) limited to reading queries on that one project, both as env vars on the agent host |
+| **Search Console** (optional) | clicks and rankings | connected once in treg's connected accounts; no Google key on the host |
+| **Sending inbox** (optional, only for approve-to-send) | email the drafts a human approved | a shared inbox on a separate sending domain (SPF, DKIM, DMARC set up; see `skills/outbound/references/deliverability.md`); `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` as env vars on the agent host; postal address and opt-out line in `gtm.json → sender` |
 | **Model access** | the agent itself | Claude Code: an Anthropic account or API key. Hermes: whichever provider it's configured with. |
 
-What the agent must **not** get: deploy credentials for the website, DNS or CDN access, email
-or social logins, or analytics admin. Everything public goes through a human. That's what keeps
+The agent never needs a billing key (Stripe, RevenueCat, …): revenue reaches it through PostHog.
+
+Sending authority is granted per channel by a human, never by the agent, in a session where the human
+is present: `gtm.py authority grant outbound --level approve_to_send --daily-cap 20 --quote "<your
+words>"`. Until then every channel is drafts only, and even after it the agent sends only the
+batches a human approved (`gtm.py approve <batch> --count N --quote "<your reply>"`, pinned to the
+drafts' content).
+
+Every scheduled run sets `MARKETING_UNATTENDED=1` in its environment, and `gtm.py` then refuses
+approvals and grants. A scheduled run that receives one records it in `plan.md` as pending; it is
+applied in the next human-present session (you run `/marketing:gtm`, or tell the Hermes agent in
+chat), with your words quoted.
+
+What the agent must **not** get: deploy credentials for the website, DNS or CDN access, logins to
+the main domain's email or to social accounts, or analytics admin. Everything public goes through a human. That's what keeps
 the autonomy gates real, not a matter of policy.
 
-**Protect the default branch.** Require a PR review to merge, so nothing the agent writes goes
-live without a human. If that blocks the agent's own state commits, set `"state_commit": "pr"` in
-`.marketing/gtm.json`. State then flows through one rolling PR you merge whenever you like.
+**Protect the default branch** of the product repo. Require a PR review to merge, so nothing the
+agent writes goes live without a human. The agent never needs to push to it: pages and site changes
+go through PRs, and its own bookkeeping goes to the state store.
 
 ## 2. Path A: Claude Code
 
 ### A1. Cloud routine (no server to run)
 
-1. Install the plugin in the project: commit a `.claude/settings.json` that enables it, or set
+1. Create a private state repo (e.g. `acme/product-marketing`, empty is fine) and give the bot token
+   write access to it.
+2. Install the plugin in the project: commit a `.claude/settings.json` that enables it, or set
    it up once in an interactive session (`/plugin marketplace add williampsmith/marketing-skills`,
    `/plugin install marketing@marketing-skills`).
-2. Run **`/marketing:gtm init` interactively first**, with the owner present: confirm the profile,
-   claims ledger, entity card, prompt panel, stage and goal. Commit `.marketing/`.
-3. Create a daily routine with `/schedule`. Give it the repo and the prompt from `hosts.md`, and
-   put the treg token in its environment as a secret.
-4. Watch the first week (section 4).
+3. Run **`/marketing:gtm init` interactively first**, with the owner present. Point it at the state
+   repo (`gtm.py store use <git URL>`, then `gtm.py sync pull`), and confirm the product context and
+   GTM profile, claims ledger, entity card, prompt panel, stage and goal. The run ends with
+   `gtm.py sync push`.
+4. Create a daily routine with `/schedule`. Give it the repo and the prompt from `hosts.md`, and put
+   `MARKETING_STATE=<state repo git URL>`, `MARKETING_UNATTENDED=1` and the treg token in its
+   environment as secrets.
+5. Watch the first week (section 4).
 
 ### A2. Your own server
 
 1. Server: any small Linux VM. Install `git`, `python3` (≥ 3.9), `gh`, the `treg` CLI, and
    Claude Code. Sign each one in with the scoped credentials above.
-2. Clone the product repo; install the plugin as in A1.
-3. Run `init` interactively over SSH (step A1.2).
-4. Add one cron line that runs Claude Code headless in the repo once a day, with the `gtm tick`
-   prompt, and logs to a file. Use a non-interactive permission mode that allows only what the
+2. Clone the product repo; install the plugin as in A1. The default `dir` store
+   (`~/.marketing/<owner>-<repo>/`) keeps state on the server; include it in the server's backups.
+3. Run `init` interactively over SSH (step A1.3, without the state repo).
+4. Add one cron line that runs Claude Code headless in the repo once a day, with the gtm tick-mode
+   prompt and `MARKETING_UNATTENDED=1`, and logs to a file. Use a non-interactive permission mode that allows only what the
    skills need (git, gh, python3, treg). Don't grant blanket permissions.
 
 ## 3. Path B: Hermes Agent
 
 1. **Server**: run Hermes the way you normally do (e.g. its Docker image on a VPS). Inside the
    agent's environment you need `git`, `python3`, `gh` and the `treg` CLI, each signed in with the
-   scoped credentials above.
+   scoped credentials above. Keep `~/.marketing` on a persistent volume, since that's where the
+   default state store lives.
 2. **Skills**: clone this repo onto the server and link `skills/*` into the agent's skills
    directory, keeping the folders side by side. Updating is `git pull`.
 3. **Product repo**: clone it where the agent can work in it, with the bot's GitHub token.
 4. **Messaging**: connect the gateway (Telegram, Slack, …) and set `notify.channel: "gateway"`
-   during init. The digest's "Needs you" list arrives in chat, and replies such as "approve 2" are
-   applied on the next tick.
+   during init. The digest's "Needs you" list arrives in chat. Approvals and grants you reply with in
+   chat are applied in that chat turn with your words quoted; other replies are applied on the next
+   tick.
 5. **Init in chat**: tell the agent to run the `gtm` skill in init mode for the repo. Answer its
-   questions (stage, goal, notify channel) and confirm the profile, claims and panel it drafts.
+   questions (stage, sales motion, deal size, goal, notify channel) and confirm the product context,
+   claims and panel it drafts.
 6. **Heartbeat**: ask the agent to schedule one daily job that runs `gtm` in tick mode for that
-   repo (prompt in `hosts.md`). One job only; `gtm` decides what's due.
+   repo (prompt in `hosts.md`), with `MARKETING_UNATTENDED=1` in the job's environment. One job
+   only; `gtm` decides what's due.
 7. **Optional hardening**: run the free access check from CI as well (`hosts.md`), so a model or
    server outage can't hide your site becoming invisible to AI bots.
 
@@ -79,19 +106,68 @@ live without a human. If that blocks the agent's own state commits, set `"state_
 
 | day | what to check |
 |---|---|
-| 0 | `init` committed `.marketing/` (profile, claims, entity, panel, gtm.json, plan.md); the heartbeat exists |
-| 1 | First tick ran: access check and baseline audit recorded; spend is on the order of $1 |
-| 1-2 | First digest arrived with a diagnosis (which rung) and a 30-day plan. Read the plan and push back. |
-| 3-7 | First PRs and drafts arrive. Review them hard: this is where you teach the claims ledger and the voice. |
-| 7 | `gtm status` shows the budget on track, no alerts, and bets with check dates |
+| 0 | `gtm.py where` shows the store outside the repo; `init` wrote gtm.json, product-context.md, claims, entity card, panel and plan.md there; the heartbeat exists |
+| 1 | First tick ran its work session; the baseline audit and access check from init are recorded; spend is on the order of $1 |
+| 1-2 | First digest arrived with the focus and why, and a 30-day plan. Read the plan and push back. |
+| 3-7 | First PRs and drafts arrive, each tied to a bet. Review them hard: this is where you teach the claims ledger and the voice. |
+| 7 | `gtm.py status` shows the budget on track, no alerts, and open bets with check dates |
 
-## 5. Operating it
+## 5. Granting authority
 
-- **Pause**: disable the scheduled job. State is in the repo, so resuming continues where it stopped.
-- **Change budget, cadence or panel**: tell the agent; it proposes the change in the digest, and you
-  approve. Or edit `.marketing/gtm.json` yourself in a PR.
+Every sending channel and both paid channels start at `draft`: the agent writes, a human sends or
+changes spend. Moving a channel up is a decision for the owner named in section 0, made in a reply to
+a digest or at the terminal. The agent applies the reply with the command below and quotes it in
+plan.md; it never decides this on its own.
+
+| when | command |
+|---|---|
+| the first batches look right and the sending inbox is set up | `gtm.py authority grant outbound --level approve_to_send --daily-cap 20 --quote "<their words>"` |
+| `gtm.py authority show` reports `bounded_eligible: true` (30 days, 50 sends, 2% replies, no complaints) and you've approved the template and segment files (below) | `gtm.py authority grant outbound --level bounded --template t1 --segment s1 --quote "<their words>"` |
+| you want the agent to adjust existing campaigns' daily budgets itself | `gtm.py track paid on --quote "<their words>"` and `gtm.py authority grant paid_search --level bounded --daily-spend-cap 50 --max-change-pct 20 --quote "<their words>"`; set the same or lower caps in the ad platform |
+
+Bounded email sends only text you approved, to people you listed. Before granting, write (or review
+the agent's draft of) two files in the state store:
+
+- `<state>/templates/t1.txt`: a `Subject: …` line, a line `---`, then the body. Mark the parts that
+  change per person with `{{first_name}}`-style slots; slot values are limited to one short line.
+- `<state>/segments/s1.txt`: the email addresses or domains this template may go to, one per line.
+
+The grant pins both files by hash. Editing either one stops bounded sends from it until you grant
+again. Bounded is available only on `outbound` and `lifecycle_email`; editor and creator pitches
+stay at approve-to-send. Re-running the grant on a bounded channel adjusts its caps, templates or
+segments.
+
+Bounded spend changes only the daily budget of campaigns that already spend: the new budget stays at
+or under `--daily-spend-cap`, moves at most `--max-change-pct` from the current one, and at most
+`--max-changes-per-day` (default 1) times a day. Starting spend from zero stays with you.
+
+To take authority back: `gtm.py authority grant <channel> --level draft` (no quote needed; any run
+may lower authority). To stop everything at once: `gtm.py pause --reason "…"` (or reply "pause");
+only a session with you present can `gtm.py resume`. A single complaint on a bounded email channel
+drops it back to approve-to-send on its own and restarts its 30-day clock.
+
+## 6. Operating it
+
+- **Pause**: reply "pause" to a digest, or run `gtm.py pause --reason "…"`. Every job stops until
+  `gtm.py resume`. Disabling the scheduled job also works; state is in the store, so resuming
+  continues where it stopped.
+- **Change budget, cadence, floors or panel**: tell the agent; it proposes the change in the digest,
+  and you approve. Or edit `<state>/gtm.json` yourself.
 - **Update the skills**: `git pull` in the clone (Hermes, A2), or update the plugin (A1).
 - **Costs**: `gtm.py budget`, or the treg dashboard. Paid jobs stop on their own at the cap.
-- **When it alerts** (access regression, lost prompts, budget exhausted, dirty repo), it stops
-  that line of work and tells you. Fix the cause, then reply or rerun.
-- **Rotate tokens** like any other bot account. The agent never stores secrets in the repo.
+- **When it alerts** (access regression, lost prompts, budget exhausted, dirty repo, a failed
+  `sync pull`, an action that failed twice), it stops that line of work and tells you. Fix the
+  cause, then reply or rerun.
+- **Rotate tokens** like any other bot account. The agent never stores secrets in either repo.
+
+## 7. Upgrading a 0.3 install
+
+0.3 kept its state in `.marketing/` inside the product repo and committed it there. That still works
+(the `repo` backend), but the default is now to keep it outside:
+
+1. On the agent's host, in the product repo: `gtm.py migrate --to <dir or git URL>`. It copies
+   `.marketing/` into the new store, upgrades `gtm.json` (the old `state_commit` setting is removed)
+   and remembers the store for this repo.
+2. Open a PR in the product repo that deletes `.marketing/`. Whether to rewrite history to remove it
+   entirely is the team's call.
+3. Check `gtm.py where` and run one `gtm.py status` before the next scheduled tick.

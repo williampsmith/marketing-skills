@@ -18,20 +18,27 @@ are against the FTC endorsement guides and the 2024 fake-review rule, and agains
 Moderators, editors and increasingly the engines themselves discount them anyway. Every message is
 honest, disclosed, and useful to the recipient's readers whether or not they name you.
 
+`<state>` below is the marketing state directory printed by `python3 ../gtm/scripts/gtm.py where`
+(field `root`). It lives outside the product repo by default; site changes still go to the product
+repo as PRs.
+
+Copy drafted by this skill must pass the `../writing` gates first: every claim from the ledger, something
+the current top answers lack, and no AI-tell phrasing.
+
 ## Requires
 
-- A recent `ai-visibility-audit` run (`.marketing/runs/<date>/answers.jsonl`), plus
-  `.marketing/profile.md` and `.marketing/claims.md` (pitches make claims, so the ledger gates them).
+- A recent `ai-visibility-audit` run (`<state>/runs/<date>/answers.jsonl`), plus
+  `<state>/product-context.md` and `<state>/claims.md` (pitches make claims, so the ledger gates them).
 - treg for reading pages (free), contact finding (paid, verified), and Reddit and backlink lookups.
 
 ## State
 
 ```
-.marketing/outreach/
+<state>/outreach/
   targets.json        ranked cited URLs + status (script-managed, status preserved across runs)
   <target-slug>.md    triage notes + the draft for one target
   tracker.md          one line per target: status, owner, dates, outcome
-.marketing/watch.json targets you pitched, watched for a mention (shared with other skills)
+<state>/watch.json targets you pitched, watched for a mention (shared with other skills)
 ```
 
 ## The run
@@ -39,7 +46,7 @@ honest, disclosed, and useful to the recipient's readers whether or not they nam
 ### 1. Rank the targets
 
 ```bash
-python3 <skill>/scripts/outreach_targets.py .marketing/runs/<latest> --top 30
+python3 <skill>/scripts/outreach_targets.py <state>/runs/<latest> --top 30
 ```
 
 The ranking weighs how often each URL was cited, on how many engines, and on how many prompts you
@@ -85,7 +92,7 @@ Then choose **one** action per target:
 | Gov / standard / encyclopedia | **skip** pitching | cite them in your own pages instead |
 
 If many targets need something you don't have, such as benchmark data, a public test, or a free
-checker tool, propose that **linkable asset** to the user as a `one-pager` (or a small tool). One
+checker tool, propose that **linkable asset** to the user as a `../content` page (or a small tool). One
 good asset can unlock a dozen pitches.
 
 ### 3. Find the right person (treg, verified only)
@@ -106,7 +113,7 @@ One file per target. Under 120 words for an email; a forum reply as long as the 
 - Subject: specific to their page ("Your 2026 PDF redaction roundup: one option missing that works offline").
 - First line: the exact page and what it gets right. No flattery.
 - What's missing and why it matters **to their readers**, with one checkable fact. Product claims
-  must be OK rows in `.marketing/claims.md`, copied with their qualifiers.
+  must be OK rows in `<state>/claims.md`, copied with their qualifiers.
 - What you offer: a test result, data, a quote from a named person, a review license.
 - Disclosure: who you are and that it's your product.
 - No reciprocal links, no payment offers, no follow-up threats. One follow-up after about 10 days, at most.
@@ -114,12 +121,20 @@ One file per target. Under 120 words for an email; a forum reply as long as the 
 Forum replies answer the question first, give the general method, name the options including
 competitors fairly, and disclose in the same sentence that mentions the product.
 
+**Sending email pitches.** By default a human sends them. If a human has granted the
+`citation_outreach` channel approve-to-send (`gtm.py authority show`), put the email drafts in a
+batch `<state>/sends/<date>-citations/drafts.jsonl` (key = the target's domain, channel
+`citation_outreach`), list it under the digest's "Needs you", apply the human's approval in a
+session where they are present with `gtm.py approve <batch> --count N --quote "<their reply>"`, and
+send with `../outbound/scripts/send_batch.py` (dry run first). Editors and press stay at per-batch approval permanently. Forum replies are always posted
+by a human from their own account.
+
 ### 5. Track and measure
 
 - Update `targets.json` status (`triaged → drafted → sent → landed | declined | skip`) and
   `tracker.md` (who sent it, when).
 - Add each pitched URL to the watch list so you see when it starts naming you:
-  `python3 ../comparison-pages/scripts/watch_pages.py --add <url> --purpose target --expect "<Brand>"`
+  `python3 ../competitive-intel/scripts/watch_pages.py --add <url> --purpose target --expect "<Brand>"`
   (the sibling skill's script; it reads pages through treg for free).
 - A target is **landed** when the page names you accurately. It's a **win** when a later audit shows
   the prompts it was cited on flip to named. Expect weeks: the editor has to update the page, and the

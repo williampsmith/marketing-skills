@@ -1,6 +1,6 @@
 {
   "name": "marketing",
-  "version": "0.3.0",
+  "version": "0.8.0",
   "description": "Growth and marketing skills for coding agents, starting with agent discoverability: measure how AI answer engines see a product, fix the site so AI search can reach and cite it, and ship code-grounded answer pages. Uses treg for live data.",
   "author": {
     "name": "William Smith"

@@ -1,0 +1,60 @@
+{
+  "_doc": "Lists used by scripts/claims_guard.py. `ban`: phrases that fail a draft on sight. `cap`: phrases allowed up to N times per document before they read as filler. `risky_terms`: words that turn a sentence into a claim needing a ledger row. `comparative_markers`: words that make a sentence naming a competitor a comparison. All matching is case-insensitive on word boundaries. Explained in ai-tells.md.",
+  "ban": [
+    "in today's fast-paced",
+    "in today's digital",
+    "in the ever-evolving",
+    "ever-changing landscape",
+    "unlock the power",
+    "unlock the full potential",
+    "harness the power",
+    "unleash",
+    "game-changer",
+    "game changer",
+    "revolutionize",
+    "revolutionise",
+    "supercharge",
+    "next-level",
+    "take it to the next level",
+    "elevate your",
+    "look no further",
+    "say goodbye to",
+    "whether you're a",
+    "it's important to note",
+    "it's worth noting",
+    "delve",
+    "tapestry",
+    "navigate the complexities",
+    "a testament to",
+    "rest assured",
+    "at the end of the day",
+    "seamlessly",
+    "cutting-edge",
+    "best-in-class",
+    "world-class"
+  ],
+  "cap": {
+    "not just": 1,
+    "imagine": 1,
+    "simply": 2,
+    "powerful": 1,
+    "robust": 1,
+    "effortless": 1,
+    "transform": 1,
+    "streamline": 1,
+    "leverage": 1,
+    "ultimate": 0,
+    "crucial": 1
+  },
+  "risky_terms": [
+    "best", "fastest", "cheapest", "easiest", "safest", "simplest",
+    "only", "#1", "number one", "the first", "the most", "leading",
+    "100%", "guarantee", "guaranteed", "secure", "unbreakable", "unhackable", "foolproof",
+    "permanently", "irreversible", "unrecoverable", "never", "always", "zero",
+    "instant", "instantly", "unlimited", "free", "compliant", "certified", "proven"
+  ],
+  "comparative_markers": [
+    "than", "unlike", "vs", "versus", "better", "faster", "cheaper", "safer", "easier",
+    "more", "less", "instead of", "compared", "outperforms", "beats", "replaces", "alternative"
+  ]
+}

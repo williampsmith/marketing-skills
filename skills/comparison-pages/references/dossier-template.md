@@ -1,6 +1,6 @@
 # Competitor dossier template
 
-`.marketing/competitors/<slug>.md`. A fact without a URL, an access date and a quote doesn't go in.
+`<state>/competitors/<slug>.md`. A fact without a URL, an access date and a quote doesn't go in.
 
 ```markdown
 # <Competitor> — dossier — refreshed <YYYY-MM-DD>

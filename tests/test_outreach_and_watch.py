@@ -15,7 +15,7 @@ def _load(path, name):
 
 
 targets = _load("skills/citation-outreach/scripts/outreach_targets.py", "outreach_targets")
-watch = _load("skills/comparison-pages/scripts/watch_pages.py", "watch_pages")
+watch = _load("skills/competitive-intel/scripts/watch_pages.py", "watch_pages")
 PANEL = json.loads((ROOT / "skills/ai-visibility-audit/references/prompt-panel.example.json").read_text())
 
 

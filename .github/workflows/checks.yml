@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Compile scripts
-        run: python -m py_compile skills/*/scripts/*.py
+        run: python -m py_compile skills/*/scripts/*.py .github/scripts/*.py
       - name: Unit tests
         run: python -m unittest discover -v tests
       - name: JSON references parse
@@ -52,6 +52,8 @@ jobs:
             grep -q "^description: ." "$d/SKILL.md" || { echo "::error file=$d/SKILL.md::missing description"; fail=1; }
           done
           exit $fail
+      - name: Eval cases are well-formed (no model calls)
+        run: python3 .github/scripts/check_evals.py evals
       - name: Manifest versions agree
         run: |
           a=$(python3 -c "import json; print(json.load(open('.claude-plugin/plugin.json'))['version'])")

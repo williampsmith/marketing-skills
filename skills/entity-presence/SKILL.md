@@ -21,9 +21,16 @@ This pays off on two timescales:
   improves what a model knows *before* it searches anything, and those gains carry forward into
   future models.
 
+`<state>` below is the marketing state directory printed by `python3 ../gtm/scripts/gtm.py where`
+(field `root`). It lives outside the product repo by default; site changes still go to the product
+repo as PRs.
+
+Copy drafted by this skill must pass the `../writing` gates first: every claim from the ledger, something
+the current top answers lack, and no AI-tell phrasing.
+
 ## Requires
 
-- `.marketing/profile.md` and `.marketing/claims.md` (descriptions are claims too).
+- `<state>/product-context.md` and `<state>/claims.md` (descriptions are claims too).
 - treg for probes (~$0.01-0.05 per question per engine) and page reads (free).
 - A human for anything behind a login. This skill prepares the exact copy; it never creates
   accounts or posts.
@@ -31,16 +38,16 @@ This pays off on two timescales:
 ## State
 
 ```
-.marketing/entity.md          the canonical entity card (single source of truth)
-.marketing/entity/inventory.md   every profile: URL, status, drift from the card, action
-.marketing/entity/probe-<date>.md  what the models believe, with and without search
+<state>/entity.md          the canonical entity card (single source of truth)
+<state>/entity/inventory.md   every profile: URL, status, drift from the card, action
+<state>/entity/probe-<date>.md  what the models believe, with and without search
 ```
 
 ## The run
 
 ### 1. Write the canonical entity card
 
-`.marketing/entity.md`, built from the profile and the claims ledger and confirmed by the user:
+`<state>/entity.md`, built from `<state>/product-context.md` and the claims ledger and confirmed by the user:
 
 - **Name** exactly as it should appear, plus spellings to avoid. Also the legal entity and maker.
 - **Type / category**, in the words buyers and directories use ("PDF redaction software").
@@ -134,7 +141,7 @@ Hand off to `ai-search-optimization` or do it directly:
 ### 6. Watch and measure
 
 - Add every official profile to the watch list with the one-liner as the expected text:
-  `python3 ../comparison-pages/scripts/watch_pages.py --add <url> --purpose profile --expect "<a distinctive phrase from the one-liner>"`.
+  `python3 ../competitive-intel/scripts/watch_pages.py --add <url> --purpose profile --expect "<a distinctive phrase from the one-liner>"`.
   Profiles drift: directories rewrite descriptions and marketplaces change categories.
 - Re-run the probe quarterly, and whenever a major model version ships. Trained-knowledge results
   only move when new models are trained, so they're slow and shouldn't be expected weekly.
