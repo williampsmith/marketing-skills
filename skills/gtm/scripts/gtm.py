@@ -34,7 +34,8 @@ DEFAULT_JOBS = {
     "audit":             {"every_days": 7,  "usd": 1.0,  "stages": ["launched"], "skill": "ai-visibility-audit"},
     "outreach_refresh":  {"every_days": 7,  "usd": 0.5,  "stages": ["launched"], "skill": "citation-outreach", "after": "audit"},
     "work_session":      {"every_days": 7,  "usd": 1.5,  "stages": ["prelaunch", "launched"], "skill": "gtm"},
-    "launch_scan":       {"every_days": 7,  "usd": 0.0,  "stages": ["prelaunch", "launched"], "skill": "gtm"},
+    # daily, so a merged feature is picked up the next morning; a scan with no new commits is a no-op
+    "launch_scan":       {"every_days": 1,  "usd": 0.0,  "stages": ["prelaunch", "launched"], "skill": "gtm"},
     "strategy_review":   {"every_days": 30, "usd": 0.0,  "stages": ["prelaunch", "launched"], "skill": "gtm"},
     "entity_probe":      {"every_days": 90, "usd": 0.2,  "stages": ["prelaunch", "launched"], "skill": "entity-presence"},
     "comparison_reverify": {"every_days": 90, "usd": 0.1, "stages": ["launched"], "skill": "comparison-pages"},
