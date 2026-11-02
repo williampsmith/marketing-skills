@@ -106,11 +106,61 @@ hard exclusions. `gtm.py fit` combines it with the profile:
 
 ```
 fit(channel) = matrix[motion][channel]
-             × attention_weight(channel)          # from customer-research; 0.5 if unknown
-             × economics(channel, acv_usd)        # typical cost per customer vs acv; 0 if it can never pay back
+             × attention_weight(channel)          # from customer-research; 1.0 until measured
+             × economics(channel, acv_usd)        # 0 when the channel can't pay back at this deal size
              × cycle_factor(channel, cycle_days)  # fast-feedback channels lose value when results land months later
              × compliance(channel, regulated, geo)
 ```
+
+**The default matrix.** Rows are channels, columns are motions. These values are starting
+estimates. The evidence for them is thin, so they are meant to be overruled by each product's own
+data.
+
+| channel | self_serve | sales_assisted | enterprise | consumer_app | ecommerce | oss_devtool |
+|---|---|---|---|---|---|---|
+| AI search and comparison pages | 0.8 | 0.9 | 0.9 | 0.6 | 0.6 | 0.9 |
+| SEO content | 0.8 | 0.7 | 0.5 | 0.5 | 0.8 | 0.8 |
+| Review sites and communities (G2, Reddit, forums, Stack Overflow) | 0.6 | 0.8 | 0.7 | 0.4 | 0.6 | 0.8 |
+| Outbound to named accounts | 0.1 | 0.7 | 0.9 | 0 | 0 | 0.3 |
+| LinkedIn organic (founder, thought leadership) | 0.4 | 0.7 | 0.8 | 0.1 | 0.1 | 0.4 |
+| Short-form video and UGC (TikTok, Reels, Shorts) | 0.5 | 0.2 | 0.05 | 0.9 | 0.9 | 0.2 |
+| Long-form video (YouTube demos and tutorials) | 0.6 | 0.6 | 0.5 | 0.5 | 0.5 | 0.7 |
+| Creators and influencers | 0.5 | 0.3 | 0.1 | 0.8 | 0.8 | 0.5 |
+| PR and press | 0.4 | 0.5 | 0.6 | 0.5 | 0.4 | 0.4 |
+| Partnerships, integrations and marketplaces | 0.6 | 0.7 | 0.7 | 0.3 | 0.4 | 0.8 |
+| Paid search | 0.6 | 0.6 | 0.3 | 0.4 | 0.8 | 0.3 |
+| Paid social | 0.5 | 0.4 | 0.3 | 0.8 | 0.8 | 0.2 |
+| Lifecycle email (to the product's own users) | 0.9 | 0.7 | 0.5 | 0.8 | 0.9 | 0.6 |
+| Referral program | 0.6 | 0.4 | 0.2 | 0.7 | 0.7 | 0.4 |
+
+What the values rest on (checked 2026-11-01; mostly vendor-reported survey results, so treat them
+as directional):
+
+- **AI search is high in every B2B motion.** G2's 2026 survey of 1,076 software buyers reports that
+  51% start vendor research in an AI chatbot rather than Google, and that 69% picked a different
+  vendor than planned because of what the chatbot surfaced. Forrester's 2026 Buyers' Journey survey
+  reports that 94% of business buyers used generative AI in a recent purchase. These support
+  Discoverability's standing priority (section 6).
+- **Peers outrank social for trust.** A 2026 SurveyMonkey and Reddit study of 1,202 US decision
+  makers found that 70% had used social media to research a purchase, but only 36% trusted it,
+  against 73% for peer insights. So review sites and communities score above social feeds for B2B,
+  and short-form video is scored as a way to build awareness, not to get onto shortlists.
+- **No reliable benchmark gives cost per customer by channel and deal size.** Published channel
+  CAC figures disagree several-fold between sources, and median B2B SaaS CAC payback is reported
+  at 15-19 months. Hence the economics rule below uses conservative cost floors, and measured cost
+  replaces them as bets close.
+
+**Economics.** `economics = min(1, acv_usd × gross_margin × payback_target_months / 12 / cost_floor)`,
+with defaults `gross_margin = 0.8` and `payback_target_months = 18`. Default `cost_floor` per
+customer: outbound $1,500, PR $1,000, paid search $400, paid social $300, creators $200. Organic
+channels cost agent effort, not media, and their floor is 0, so the factor is 1. At a $120
+ACV, outbound's factor is 0.1 and paid social's 0.48; at $60k both are 1. Once a channel has a measured
+cost per customer from closed bets, that replaces the floor.
+
+**Learning from the product.** The matrix value acts as a prior worth three bets. Each closed bet in
+a channel moves its fit towards the measured result, so after three or four bets the product's own
+evidence outweighs the default. `attention_weight` replaces the matrix's assumptions about where
+buyers spend time as soon as `customer-research` has measured it.
 
 - **Eligible** if `fit ≥ 0.25` and no hard exclusion applies. Ineligible channels never get
   improvement jobs; their sensors don't run.
@@ -118,18 +168,18 @@ fit(channel) = matrix[motion][channel]
 - The digest lists ineligible channels once a month with the reason, so a human can override
   (`gtm.json → fit.overrides`).
 
-Two examples, using the default matrix:
+Two examples, before any attention measurements (attention 1.0):
 
-| channel | self-serve consumer tool, $10/mo | enterprise compliance product, $60k ACV |
+| channel | self-serve tool, $120/yr | enterprise compliance product, $60k ACV |
 |---|---|---|
-| AI search and comparison pages | 0.8 | 0.9 (buyers research and shortlist with AI) |
-| SEO content | 0.8 | 0.6 |
-| Outbound to named accounts | 0 (economics) | 0.9 |
-| LinkedIn thought leadership | 0.3 | 0.8 |
-| Analyst and review sites (G2, Gartner) | 0.4 | 0.8 |
-| Short-form UGC (TikTok, Reels) | 0.8 | 0.05 (attention) → ineligible |
-| Founder or demo video on LinkedIn and YouTube | 0.4 | 0.6 |
-| Paid social | 0.6 | 0.3 (ABM-targeted LinkedIn only) |
+| AI search and comparison pages | 0.8 | 0.9 |
+| SEO content | 0.8 | 0.5 |
+| Outbound to named accounts | 0.1 × 0.1 economics = 0.01 → ineligible | 0.9 |
+| LinkedIn organic | 0.4 | 0.8 |
+| Review sites and communities | 0.6 | 0.7 |
+| Short-form video and UGC | 0.5 | 0.05 → ineligible |
+| Long-form video | 0.6 | 0.5 |
+| Paid social | 0.5 × 0.48 economics = 0.24 → ineligible | 0.3 |
 
 So `creative` stays useful for enterprise, but its formats change: demo videos, LinkedIn
 document posts and diagrams instead of UGC hooks. Formats are channel-bound, and the channel is
@@ -316,17 +366,38 @@ properties and never committed to the product repo.
 | Product and web analytics, funnels, experiments, flags, surveys, marketing metrics | **PostHog Cloud** (the reference setup; US or EU region by data residency) | system of record for the funnel, the operator's metrics and the team's dashboard; the free tier covers an early-stage product |
 | Search data | Search Console, GA4 via treg connected accounts | free |
 | AI visibility, SERP, backlinks, social, ads library, enrichment | **treg** | metered |
-| Revenue | Stripe (read-only key) | MRR, churn, expansion |
+| Revenue | Stripe, **synced into PostHog** with PostHog's Stripe source | MRR, churn, expansion, queried through PostHog |
 | Creative generation | treg (Seedance, image models, voice) | via the `make-ugc` treg skill where it fits |
 
-To verify before building: whether treg proxies PostHog and Stripe, and which PostHog plans
-include scheduled dashboard emails.
+**Access (checked 2026-11-01).** treg's catalog has no PostHog or Stripe endpoints, so the agent
+talks to PostHog directly. That is the only direct integration the plugin needs:
+
+- **Writing:** the PostHog project API key, which is meant for event capture and is low risk, sends
+  `marketing_metric` and `marketing_bet` events.
+- **Reading:** a PostHog personal API key, scoped to query read on the one project, runs HogQL
+  queries for funnel stages, revenue and the operator's own metrics.
+- **Stripe:** the agent never holds a Stripe key. A human connects Stripe once as a PostHog data
+  warehouse source, using a restricted key with webhook sync, as PostHog recommends. Revenue then
+  reaches the agent through the same query key. Stripe's tables count against the warehouse's free
+  1M rows a month.
+
+**PostHog Cloud plans.**
+- **Free:** 1M analytics events, 1M flag and experiment requests, 1,500 survey responses and 1M
+  warehouse rows a month, one project, one year of retention, and up to 5 dashboard or insight
+  subscriptions by email or Slack (daily, weekly or monthly; up to 20 insights each).
+- **Pay-as-you-go:** $0 base fee, billed only above the free allowances, with 7-year retention, 6
+  projects and unlimited subscriptions.
+
+The reference setup starts free: one weekly email or Slack subscription to the Growth dashboard
+needs only one of the five slots. Move to pay-as-you-go (with billing limits set) before the first
+year of history would start expiring, because year-on-year comparisons need it.
 
 ### 9.3 Where people see it
 
 - **PostHog dashboard, "Growth":** the operator sends its own metrics as `marketing_metric`
   events (AI mention, citation and share of voice per engine, rung status, focus, spend, bet
-  results) next to the product funnel. One link for the team.
+  results) next to the product funnel. One link for the team, and a weekly PostHog subscription
+  emails or posts it to Slack.
 - **Fallback for teams without PostHog:** `gtm.py report` renders a self-contained HTML scorecard
   into the state store's `reports/`; on Claude Code it may also be published as an Artifact.
 - **Cadence:** alerts immediately; weekly digest to the notify channel (Shipped, Moved, Broken,
@@ -446,9 +517,25 @@ run in CI against a fixture repo.
 6. **Marketing data stays out of the product repo by default.** PostHog holds metrics and
    experiment results; a state store outside the repo holds operator state (section 9.1).
 
-## 16. Still open
+## 16. Research findings (2026-11-01)
 
-- Whether treg proxies PostHog and Stripe, or the agent uses their APIs directly with its own keys.
-- Which PostHog Cloud plan includes scheduled dashboard emails, or whether the weekly digest link is
-  enough.
-- The default channel-fit matrix values (section 4.3), to be checked against real products.
+1. **treg and PostHog or Stripe:** treg's catalog has neither. The agent uses PostHog's API directly
+   with two scoped keys, and Stripe reaches it only through PostHog's Stripe source (section 9.2).
+   Search Console and GA4 stay on treg's connected accounts.
+2. **Scheduled dashboard reports:** PostHog's free plan includes up to 5 email or Slack
+   subscriptions; pay-as-you-go ($0 base) makes them unlimited. The reference setup uses one
+   (section 9.2).
+3. **Channel-fit defaults:** set from buyer surveys and CAC benchmarks (section 4.3). The surveys
+   support a high AI-search fit for every B2B motion and lower trust in social feeds than in peers;
+   cost benchmarks are too inconsistent to rely on, so economics uses conservative floors that
+   measured costs replace.
+
+Sources: [G2 survey coverage](https://www.marketscale.com/industries/marketing-tech/b2b-buyers-are-forming-vendor-shortlists-before-ever-talking-to-sales-and-ai-is-why),
+[Forrester 2026 survey coverage](https://authoritytech.io/curated/forrester-genai-b2b-buyer-starting-point-shortlist-2026),
+[SurveyMonkey and Reddit study](https://www.cmswire.com/the-wire/new-research-from-surveymonkey-and-reddit-reveals-why-trust-is-the-new-currency-in-b2b-buying/),
+[CAC payback benchmarks](https://www.saashero.net/strategy/maxio-cac-benchmarks-b2b-saas/),
+[PostHog pricing](https://posthog.com/pricing),
+[PostHog subscriptions](https://posthog.com/docs/product-analytics/subscriptions),
+[PostHog Stripe source](https://posthog.com/docs/data-pipelines/sources/stripe).
+The survey figures come from secondary coverage; the primary G2 and Forrester reports were not
+read.
