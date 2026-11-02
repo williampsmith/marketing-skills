@@ -6,9 +6,10 @@ Today the plugin is an AI-search operator: seven skills, one entry point (`gtm`)
 engine (`gtm.py`) that schedules jobs, enforces a budget and works up one ladder. This spec makes it
 a growth operator for the whole funnel without giving up what makes it runnable unattended.
 
-Background: the comparison with `coreyhaines31/marketingskills` (a 53-skill consultative library)
-concluded that we should match its coverage with fewer skills, keep execution in code, and adopt
-its product-context file, loop anatomy, guardrails and writing rules.
+The approach: cover the funnel with about twenty skills rather than one per topic, keep execution in
+code, and add a shared product context, a stricter job contract, guardrails for sending and spending,
+and a shared writing standard. References are written from first principles; no text is copied from
+other skill libraries.
 
 ## 1. Goals and non-goals
 
@@ -38,6 +39,9 @@ its product-context file, loop anatomy, guardrails and writing rules.
 4. **Drafts and PRs, humans publish.** Raised only by explicit, capped authorisation.
 5. **Every number has a source and a date.** Unsourced numbers are left out, not estimated.
 6. **Report movement, not activity.**
+7. **The product repo gets the work, not the bookkeeping.** Pages, tracking code and other proposed
+   changes arrive as PRs. Metrics, experiments, run state and anything with personal data live
+   elsewhere (section 9).
 
 ## 3. Concepts
 
@@ -170,6 +174,21 @@ and each skill declares which channels it serves, so fit filters skills as well.
 5. **Hysteresis.** The focus holds until its rung is met, the monthly `strategy_review`, or another
    stage falls below half its floor.
 
+**Discoverability is a standing priority.** Buyers in every motion now research and shortlist with
+AI assistants, and the cost of being absent or misdescribed compounds, so Discoverability is not
+left to compete on the bottleneck rule alone:
+
+- A failed `reachable` or `known` rung counts as an alert (rule 1). Both are cheap to fix and
+  everything above them depends on them.
+- Until `preferred` is met, Discoverability gets at least 25% of improvement work whenever it isn't
+  the focus, and it is the default secondary track.
+- Once `preferred` is met, it drops to sensors plus fixes for regressions, and its share goes back
+  to the pool.
+- It is the focus itself only when the bottleneck rule says so. Visibility doesn't help while
+  tracking is broken or signups leak, so it doesn't override rules 2 and 3.
+- The only exception is an AI-search fit below 0.25 (section 4.3), which is rare: impulse consumer
+  purchases with no research step. A human can override that too.
+
 The digest leads with it, e.g. "Focus: Conversion — trial→activated is 18% against a 35% floor.
 Secondary: Discoverability. Not pursuing: short-form UGC (buyers aren't there: 0.05)."
 
@@ -190,11 +209,11 @@ ones:
 | `cooldown_days`, `dedupe_key` | 30, `"page_url"` | `gtm.py record --key` refuses repeats inside the window |
 | `max_actions` | 2 | `tick` |
 | `stop` | `"two failed attempts on the same key → escalate"` | `gtm.py` counters |
-| `output` | `".marketing/conversion/…"`, `"pr"`, `"draft"` | digest |
+| `output` | `"state:conversion/…"`, `"pr"`, `"draft"` | digest |
 
 ### 7.2 Dispatch
 
-- `tick` returns due jobs, each self-contained: inputs, output paths under `.marketing/<track>/`,
+- `tick` returns due jobs, each self-contained: inputs, output paths under `<state>/<track>/`,
   reserved budget.
 - **Sensor and research jobs** run in parallel as subagents when the host supports it (Claude Code
   Agent tool, Hermes `delegate_task`), or one after another otherwise. Each writes only its own
@@ -208,8 +227,9 @@ ones:
 
 ### 8.1 Every improvement is a bet
 
-`.marketing/experiments.jsonl`, one record per bet, written by `gtm.py bet open` and closed by
-`gtm.py bet close`:
+One record per bet in the state store's `experiments.jsonl`, written by `gtm.py bet open` and closed
+by `gtm.py bet close`. Every change of status is also sent to PostHog so the team sees the ledger on
+the dashboard:
 
 ```json
 {"id": "2026-11-12-comparison-acrobat", "track": "discoverability", "channel": "ai_search",
@@ -240,8 +260,9 @@ in different tracks comparable.
 
 ### 8.4 Allocation
 
-- The focus track gets about 80% of improvement work; the rest goes to the secondary track and to
-  exploration.
+- The focus track gets at least 60% of improvement work. Discoverability's standing share
+  (section 6) comes next; if Discoverability is the focus, the secondary track takes that share.
+  What remains goes to exploration.
 - Within a track, tactics are chosen by Thompson sampling over tactic types: the prior is the
   channel fit (section 4.3), updated by this product's closed bets. Tactics that keep winning get
   more work; untried but plausible ones still get a share.
@@ -254,27 +275,45 @@ in different tracks comparable.
 
 ## 9. Measurement and reporting
 
-### 9.1 Shared files
+### 9.1 Where data lives
 
-```
-.marketing/
-  product-context.md     # GTM profile, positioning, ICP, objections, customer language, voice, proof, learnings
-  claims.md              # claims ledger (unchanged)
-  gtm.json               # state: tracks, floors, fit, focus, jobs, budget, notify
-  metrics/<metric>.jsonl # {"date","value","source","track","cost_usd"} one row per observation
-  experiments.jsonl      # the bet ledger
-  spend.jsonl            # unchanged
-  <track>/…              # each track's working files
-  digests/, reports/     # weekly digest, monthly review
-```
+Nothing the operator records has to live in the product repo. In 0.3 the repo was the agent's
+memory because it was durable and cost no infrastructure. That convenience gets in the way of
+adoption: teams don't want marketing data, strategy or outreach contacts in their code history, and
+for an open-source product the repo is public. Data is split by who uses it:
 
-The repo is the audit trail. `gtm.py` computes rungs, focus and bet results from `metrics/`.
+| class | contents | where |
+|---|---|---|
+| **Metrics and experiment results** | every observation (`{"metric","date","value","source","track","cost_usd"}`), rung status, focus, bet opened and closed | **PostHog**, as `marketing_metric` and `marketing_bet` events. The system of record for people. |
+| **Operator state** | `gtm.json` (tracks, floors, fit, focus, jobs, budget, notify), last runs, cooldowns and dedupe keys, `spend.jsonl`, `experiments.jsonl`, raw AI answers and run outputs, outreach queues, digests | **the state store** (below). Never the product repo. |
+| **Reviewed knowledge** | `product-context.md`, `claims.md`, the prompt panel | the state store by default; the product repo if the team wants changes reviewed in PRs (`state.knowledge: "repo"`) |
+| **Proposed work** | pages, `llms.txt`, structured data, tracking code, onboarding changes | **the product repo, as PRs**. Its only required footprint. |
+
+**The state store** is a directory with a pluggable backend, chosen in init:
+
+| backend | for | how |
+|---|---|---|
+| `dir` (default) | a persistent host: Hermes on a VPS, a server running Claude Code | `~/.marketing/<owner>-<repo>/` on the agent's machine |
+| `git` | ephemeral hosts such as a Claude Code cloud routine, or wanting history | a separate private repo (e.g. `<product>-marketing`), cloned at the start of each run and pushed at the end. Gives diffs and an audit trail without touching the product repo. |
+| `repo` | teams that prefer 0.3's behaviour | `.marketing/` in the product repo, as today |
+
+The agent finds the store through `MARKETING_STATE` (a path or a git URL) in its environment or
+scheduled prompt. Nothing has to be added to the product repo to point at it.
+
+`gtm.py` computes rungs, focus and bet results from the store's local copy of recent metrics. That
+copy is refreshed from PostHog's query API at the start of each tick, so PostHog stays the source of
+truth and edits made there (a corrected value, a deleted bad run) are respected. Without PostHog
+credentials, the copy in the store is used on its own. That is also how tests and offline runs work.
+
+**Personal data:** outreach contacts, author emails and account names stay in the state store with a
+retention limit (default 180 days after last contact). They are never sent to PostHog as event
+properties and never committed to the product repo.
 
 ### 9.2 Tool choices (opinionated)
 
 | need | tool | notes |
 |---|---|---|
-| Product and web analytics, funnels, experiments, flags, surveys | **PostHog** | system of record for the funnel and the team's dashboard; self-hostable |
+| Product and web analytics, funnels, experiments, flags, surveys, marketing metrics | **PostHog Cloud** (the reference setup; US or EU region by data residency) | system of record for the funnel, the operator's metrics and the team's dashboard; the free tier covers an early-stage product |
 | Search data | Search Console, GA4 via treg connected accounts | free |
 | AI visibility, SERP, backlinks, social, ads library, enrichment | **treg** | metered |
 | Revenue | Stripe (read-only key) | MRR, churn, expansion |
@@ -289,7 +328,7 @@ include scheduled dashboard emails.
   events (AI mention, citation and share of voice per engine, rung status, focus, spend, bet
   results) next to the product funnel. One link for the team.
 - **Fallback for teams without PostHog:** `gtm.py report` renders a self-contained HTML scorecard
-  into `.marketing/reports/`; on Claude Code it may also be published as an Artifact.
+  into the state store's `reports/`; on Claude Code it may also be published as an Artifact.
 - **Cadence:** alerts immediately; weekly digest to the notify channel (Shipped, Moved, Broken,
   Next, Needs you, and the focus line); monthly review with charts, closed bets and proposed
   learnings; quarterly fit review.
@@ -315,9 +354,25 @@ regulated products get a mandatory human review of every asset.
 
 | tier | actions | default |
 |---|---|---|
-| 1 · autonomous | read, measure, research, draft, stage, open PRs, write `.marketing/` | allowed |
+| 1 · autonomous | read, measure, research, draft, stage, open PRs, write the state store, send events to PostHog | allowed |
 | 2 · gated | publish, send, spend, change ad or email settings, contact a person, delete | human approves each, via the digest or a review page |
 | 2 · bounded | a tier-2 action with explicit authority in `gtm.json → authority` | allowed within caps: per-run and daily volume, spend, allowlist of accounts or lists |
+
+**Sending, step by step.** Authority to send is earned, per channel, in three steps:
+
+1. **Draft** (every channel at first): the agent writes the message; a human sends it.
+2. **Approve-to-send** (from phase 3 for outbound and outreach): the human approves a batch in the
+   digest or on the review page, and the agent sends exactly those messages. Approval is the
+   send button; nobody copies and pastes. Follow-ups go only within a sequence the human approved,
+   and stop on any reply.
+3. **Bounded** (phase 5, opt-in per channel): the agent sends without per-message approval, within
+   daily caps, to contacts matching an approved segment, using approved templates. It can be
+   switched on only after 30 days of approve-to-send in that channel with a reply rate at or above
+   the floor and no complaints.
+
+Sending happens from a dedicated shared inbox on a separate sending domain (e.g. `hello@try<product>.com`),
+so a mistake can't damage the main domain's deliverability. Every reply goes to a human. Press,
+editors and named enterprise accounts stay at approve-to-send permanently.
 
 Always: suppression lists checked before any send; CAN-SPAM, CASL, GDPR and FTC rules in
 `references/compliance.md`; no raw personal data in state or logs (IDs or hashes); a kill switch
@@ -357,9 +412,9 @@ run in CI against a fixture repo.
 
 | phase | version | delivers | done when |
 |---|---|---|---|
-| 1 · foundations | 0.4 | `product-context` with GTM profile, fit (`gtm.py fit`), tracks and focus (`gtm.py focus`), job contract, `metrics/` store, bet ledger, `writing`, guardrails references, eval harness | an Obscript-like fixture picks the right focus with a stated reason; an enterprise fixture marks UGC ineligible |
+| 1 · foundations | 0.4 | `product-context` with GTM profile, fit (`gtm.py fit`), tracks and focus (`gtm.py focus`) with Discoverability's standing share, job contract, state store (`dir`, `git`, `repo` backends), bet ledger, `writing`, guardrails references, eval harness | an Obscript-like fixture picks the right focus with a stated reason; an enterprise fixture marks UGC ineligible; a tick with the `dir` backend leaves the product repo untouched except for PRs |
 | 2 · measurement | 0.5 | `measurement` with PostHog setup and sync, Search Console and Stripe sensors, monthly report, HTML fallback | the dashboard shows AI visibility and the funnel side by side; a bet closes from metrics alone |
-| 3 · demand | 0.6 | `customer-research`, `competitive-intel`, `seo`, `outbound` (drafts), `creative`, `social`, `content` rename | attention scores come from data; one creative asset goes from brief to review page to measured |
+| 3 · demand | 0.6 | `customer-research`, `competitive-intel`, `seo`, `outbound` (drafts, then approve-to-send), `creative`, `social`, `content` rename | attention scores come from data; one creative asset goes from brief to review page to measured |
 | 4 · conversion | 0.7 | `cro`, `activation`, `experiments` with PostHog flags | an A/B test runs end to end as a PR plus flag |
 | 5 · send and spend | 0.8+ | `lifecycle`, `paid`, bounded authority | a capped send and a capped budget change run with the kill switch tested |
 
@@ -370,14 +425,30 @@ run in CI against a fixture repo.
 - `profile.md` folds into `product-context.md`; the GTM profile section is drafted and needs one
   human confirmation before fit is used. Until then, fit defaults to the motion matrix alone.
 - Existing jobs keep their names and gain `track` and `kind`.
+- `gtm.py migrate --to dir|git` moves `.marketing/` out of the product repo into the chosen state
+  store, sends its metrics history to PostHog when credentials exist, and opens a PR that deletes
+  `.marketing/` from the repo (history rewrite is left to the team). Teams that want the old
+  behaviour pick the `repo` backend and nothing moves.
 
-## 15. Open questions
+## 15. Decisions (2026-11-01)
 
-1. Read `.agents/product-marketing.md` when it exists, for teams already using the other library?
-   Proposed: yes, import into `product-context.md` at init.
-2. Which track and channel order for Obscript after Discoverability? Its profile decides; to be
-   confirmed in its init.
-3. When to grant bounded send authority, and from which inbox?
-4. Borrowed frameworks: write references from first principles and credit sources where a
-   specific framework is adopted (e.g. loop anatomy).
-5. PostHog cloud or self-hosted for the reference setup?
+1. **No compatibility with other skill libraries.** The plugin doesn't read or import their context
+   files.
+2. **Track order for a given product is decided by the plugin** when it runs against that product,
+   through fit and the bottleneck rule. Discoverability is a standing priority in every motion
+   (section 6).
+3. **Sending authority is earned in steps**: draft, then approve-to-send, then bounded, from a
+   dedicated inbox on a separate sending domain (section 11).
+4. **References are written from first principles.** No text is copied from other libraries, so no
+   attribution is needed. Ideas and frameworks can be used freely; copied text would carry the
+   source's licence terms.
+5. **PostHog Cloud** is the reference setup.
+6. **Marketing data stays out of the product repo by default.** PostHog holds metrics and
+   experiment results; a state store outside the repo holds operator state (section 9.1).
+
+## 16. Still open
+
+- Whether treg proxies PostHog and Stripe, or the agent uses their APIs directly with its own keys.
+- Which PostHog Cloud plan includes scheduled dashboard emails, or whether the weekly digest link is
+  enough.
+- The default channel-fit matrix values (section 4.3), to be checked against real products.
