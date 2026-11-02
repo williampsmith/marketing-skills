@@ -25,7 +25,7 @@ experiment results.
     python3 gtm.py bet list [--status open]
     python3 gtm.py learnings [--accept ID | --reject ID]
     python3 gtm.py profile [--motion M --acv N --cycle-days N --regulated R --attention ch=0.3] [--confirm]
-    python3 gtm.py connect posthog|search_console [on|off] | connect revenue stripe
+    python3 gtm.py connect posthog [on|off] | connect search_console sc-domain:example.com | connect revenue stripe
     python3 gtm.py pause [--reason R] | resume   # kill switch
     python3 gtm.py digest                        # data half of digests/<date>.md
     python3 gtm.py store use SPEC                # remember a store (path, git URL or "repo") for this repo
@@ -127,9 +127,9 @@ DEFAULT_JOBS = {
         "self_check": "read the source itself, not a cached copy",
         "stop": "open a PR correcting the page; never leave a known-wrong claim live"},
     "tracking_check": {
-        "every_days": 1, "usd": 0.0, "stages": ["launched"], "skill": "measurement",
+        "every_days": 1, "usd": 0.0, "stages": ["prelaunch", "launched"], "skill": "measurement",
         "track": "measurement", "kind": "sensor", "requires": ["connection:posthog"],
-        "acts_when": "the site lost its PostHog snippet or the first step stopped firing",
+        "acts_when": "PostHog stopped receiving events",
         "self_check": "a quiet day is not a broken tag: check the snippet and two days of events",
         "stop": "alert; the fix is a PR to the tracking code"},
     "metrics_sync": {
@@ -330,8 +330,10 @@ def funnel_ref() -> dict:
 
 def outbox(event: str, props: dict) -> None:
     """Queue an event for PostHog. The measurement skill flushes it; without PostHog it just grows."""
+    import uuid
     append_jsonl(R() / "posthog-outbox.jsonl",
-                 {"event": event, "timestamp": dt.datetime.now(dt.timezone.utc).isoformat(), "properties": props})
+                 {"event": event, "uuid": str(uuid.uuid4()),
+                  "timestamp": dt.datetime.now(dt.timezone.utc).isoformat(), "properties": props})
 
 
 # --------------------------------------------------------------------------- state
@@ -1478,8 +1480,21 @@ def cmd_connect(a) -> int:
             print(f"revenue source is one of {', '.join(REVENUE_SOURCES)} or none", file=sys.stderr)
             return 1
         s["connections"]["revenue_source"] = None if a.value == "none" else a.value
+    elif a.name == "search_console":
+        # on | off | the Search Console property (sc-domain:example.com or https://example.com/)
+        if a.value == "off":
+            s["connections"]["search_console"] = False
+        elif a.value.startswith(("sc-domain:", "https://", "http://")):
+            s["connections"]["search_console"] = a.value
+        else:
+            print("search_console takes off or a property: sc-domain:example.com or https://example.com/",
+                  file=sys.stderr)
+            return 1
     else:
-        s["connections"][a.name] = a.value != "off"
+        if a.value not in ("on", "off"):
+            print(f"{a.name} takes on or off", file=sys.stderr)
+            return 1
+        s["connections"][a.name] = a.value == "on"
     save_state(s)
     print(json.dumps(s["connections"], indent=2))
     return 0
@@ -1706,7 +1721,9 @@ def main() -> int:
     p.add_argument("--confirm", action="store_true", help="the human confirmed the profile")
     p = sub.add_parser("connect", help="mark a data source connected (on/off) or set the revenue source")
     p.add_argument("name", choices=list(CONNECTIONS) + ["revenue"])
-    p.add_argument("value", nargs="?", default="on", help="on | off, or for revenue: " + " | ".join(REVENUE_SOURCES))
+    p.add_argument("value", nargs="?", default="on",
+                   help="posthog: on | off; search_console: the property (sc-domain:… or https://…/) | off; "
+                        "revenue: " + " | ".join(REVENUE_SOURCES) + " | none")
     p = sub.add_parser("pause")
     p.add_argument("--reason", default="")
     p = sub.add_parser("budget")

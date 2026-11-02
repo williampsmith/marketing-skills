@@ -5,7 +5,7 @@ or for the monthly review.
     python3 report.py [--out <state>/reports/<date>.html] [--days 90]
 
 Shows the focus and why, each track's rungs, the funnel against its floors, AI visibility over
-time, open and recent bets, and spend. Every number names its source and date. No network calls,
+time, open and recent bets, and spend. Funnel counts show their age; rungs name their metric and date. No network calls,
 no external assets. Stdlib only.
 """
 from __future__ import annotations
@@ -49,7 +49,12 @@ def pct(x) -> str:
 
 
 def sparkline(rows: list[dict], w: int = 260, h: int = 48) -> str:
-    pts = [(r["date"], float(r["value"])) for r in rows if r.get("value") is not None]
+    pts = []
+    for r in rows:
+        try:
+            pts.append((r["date"], float(r["value"])))
+        except (KeyError, TypeError, ValueError):
+            continue
     if len(pts) < 2:
         return '<span class="muted">not enough runs yet</span>'
     vals = [v for _, v in pts]
@@ -85,7 +90,8 @@ def build(days: int = 90) -> str:
         rate = f"{pct(st.get('rate'))} <span class='muted'>(floor {pct(st.get('floor'))})</span>" if "floor" in st else ""
         score = st.get("score")
         cls = "" if score is None else ("ok" if score >= 1 else "bad")
-        rows.append(f"<tr><td>{esc(st['label'])}</td><td class='num'>{esc(st['count'] if st['count'] is not None else '—')}</td>"
+        rows.append(f"<tr><td>{esc(st['label'])}</td><td class='num'>{esc(st['count'] if st['count'] is not None else '—')}"
+                    f"{'' if st['age_days'] is None else f' <span class=muted>({st[chr(97)+chr(103)+chr(101)+chr(95)+chr(100)+chr(97)+chr(121)+chr(115)]}d old)</span>'}</td>"
                     f"<td>{rate}</td><td class='num {cls}'>{esc('—' if score is None else f'{score:.2f}')}</td>"
                     f"<td class='muted'>{esc(st['track'])}</td></tr>")
     parts.append("<section><h2>Funnel (28-day counts)</h2><div class='wrap'><table><tr><th>stage</th><th>count</th>"
@@ -116,7 +122,8 @@ def build(days: int = 90) -> str:
         if bt["status"] != "open" and (bt.get("closed") or "") < since:
             continue
         r = bt.get("result") or {}
-        res = "" if bt["status"] == "open" else f"effect {r.get('effect')} vs {r.get('expected_effect')} {esc(r.get('note') or '')}"
+        res = "" if bt["status"] == "open" else \
+            f"effect {r.get('effect', '—')} vs {r.get('expected_effect', '—')} {r.get('note') or ''}".strip()
         bet_rows.append(f"<tr><td>{esc(bt['id'])}</td><td>{esc(bt['tactic'])}</td><td>{esc(bt['method'])}</td>"
                         f"<td>{esc(bt['status'])}</td><td>{esc(bt['check'])}</td><td class='muted'>{esc(res)}</td></tr>")
     parts.append("<section><h2>Bets</h2><div class='wrap'><table><tr><th>id</th><th>tactic</th><th>method</th><th>status</th>"

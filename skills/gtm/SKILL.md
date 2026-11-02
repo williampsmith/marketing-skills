@@ -139,9 +139,9 @@ Skipped jobs (missing connection, ineligible channel, track off) go in the diges
 | `fit_review` | re-read the GTM profile; if `../customer-research` is installed, re-measure attention; `gtm.py fit`; propose profile or override changes. |
 | `entity_probe` | entity-presence step 2; update `known_issues` |
 | `comparison_reverify` | comparison-pages: re-read every dossier source behind a live page |
-| `tracking_check` | `../measurement`: `posthog.py tracking-check` → record. Exit 1 is an alert: notify now. |
+| `tracking_check` | `../measurement`: `posthog.py tracking-check` → record. Exit 1 (no events in 2 days) is an alert: notify now. |
 | `metrics_sync` | `../measurement`: `posthog.py sync` (send the outbox, pull funnel counts and queries) → record. |
-| `search_console` | `../measurement`: `search_console.py <property>` → record. |
+| `search_console` | `../measurement`: `search_console.py` (stored property) → record; exit 1 means an error, nothing written. |
 | `monthly_report` | `../measurement`: `report.py` → link the scorecard in the digest → record. |
 | `panel_review` | ai-visibility-audit panel design: propose changes, never apply them silently. Bump `panel_version`. |
 

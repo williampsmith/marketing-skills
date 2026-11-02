@@ -63,13 +63,14 @@ PostHog Cloud is the reference setup. Full steps: `references/posthog-setup.md`.
    | `POSTHOG_PROJECT_ID` | the numeric project id |
    | `POSTHOG_HOST` | `us` (default), `eu`, or an `https://` URL for a self-hosted instance |
 
-6. `python3 scripts/posthog.py check` must show both keys present and `query_ok: true`. Then
+6. `python3 scripts/posthog.py check` must show all three variables set and `ok: true` (exit 0). Then
    `gtm.py connect posthog`, which turns on the `tracking_check` and `metrics_sync` jobs.
 7. **Revenue source**: `gtm.py connect revenue <stripe|revenuecat|paddle|chargebee|polar|events>`
    and the matching setup in `references/revenue-sources.md`.
 8. **Search Console** (optional, free): the human connects the property in treg's connected
    accounts. Add `"brand_terms": ["acme", "acme app"]` to gtm.json, then `gtm.py connect
-   search_console`.
+   search_console sc-domain:acme.com` (or the URL-prefix form `https://acme.com/`), which stores
+   the property for the weekly job.
 
 ## Revenue source
 
@@ -78,7 +79,7 @@ a billing key.
 
 | `connect revenue …` | how revenue reaches PostHog |
 |---|---|
-| `stripe` (default) | PostHog's Stripe data warehouse source, connected once by a human with a restricted key and webhook sync. PostHog's revenue analytics computes MRR and churn from it. |
+| `stripe` (the usual choice for web billing) | PostHog's Stripe data warehouse source, connected once by a human with a restricted key and webhook sync. PostHog's revenue analytics computes MRR and churn from it. |
 | `revenuecat` | RevenueCat data warehouse source. PostHog's revenue analytics doesn't read it yet (checked 2026-11-01), so metrics come from HogQL over the imported tables. |
 | `paddle`, `chargebee`, `polar` | Their data warehouse sources, read with HogQL. |
 | `events` | Own billing or a license server: a PR adds `purchase`, `renewal` and `refund` capture with revenue properties, sent to the same PostHog person as the visitor. |
@@ -93,10 +94,10 @@ and column names differ between projects and sources: **verify against your proj
 
 | job | recipe |
 |---|---|
-| `tracking_check` (daily) | `python3 scripts/posthog.py tracking-check` → `gtm.py record tracking_check`. Exit 1 means the snippet is missing or the first step stopped firing: alert now, and open a PR fixing the tracking code if the cause is in the repo. |
+| `tracking_check` (daily) | `python3 scripts/posthog.py tracking-check` → `gtm.py record tracking_check`. Exit 1 means PostHog received no events in 2 days: alert now; its notes say whether the site's HTML lacks the snippet (bundled or proxied posthog-js is fine). A quiet first step alone is not a failure. |
 | `metrics_sync` (daily) | `python3 scripts/posthog.py sync` (sends the outbox, then pulls stage counts, source capture and the configured queries) → `gtm.py record metrics_sync`. On an error the outbox is kept; retry tomorrow and report it. |
-| `search_console` (weekly) | `python3 scripts/search_console.py <property, e.g. sc-domain:acme.com>` → `gtm.py record search_console`. |
-| `monthly_report` (monthly) | `python3 scripts/report.py` → link `<state>/reports/<date>.html` in the digest. |
+| `search_console` (weekly) | `python3 scripts/search_console.py` (the property stored by `gtm.py connect search_console sc-domain:acme.com`) → `gtm.py record search_console`. A treg or Search Console error exits 1 and writes nothing: record the failure, retry next week. |
+| `monthly_report` (monthly) | `python3 scripts/report.py` → link `<state>/reports/<date>.html` in the digest → `gtm.py record monthly_report`. |
 
 Before acting on a pulled number, apply the job's self-check: a stage count that halves or doubles
 overnight is usually a tracking change, so check the tracking PRs and PostHog's event volume first.
@@ -125,9 +126,10 @@ subscription to it (`references/posthog-setup.md`).
 
 - Keys live only in the host's environment. Never write them to the store, the repo, a PR or a
   digest.
-- No personal data goes to PostHog from this plugin. `posthog.py` drops any property whose name looks
-  personal (email, phone, name, address, contact) before sending, and identifies the operator's own
-  events as `marketing-operator:<repo>`.
+- No personal data goes to PostHog from this plugin. `posthog.py` sends only an allowlist of
+  properties per event (metric name, value, date, source, track; bet id, tactic, status, dates and
+  effect), redacts emails and phone numbers in any text it does send, and identifies the operator's
+  own events with a fixed `marketing-operator:<repo>` id and no person profile.
 - Tracking code changes are PRs a human merges. Check them after deploy with `tracking-check`.
 - EU traffic: tracking usually needs consent first. Use PostHog's consent options (e.g. starting
   opted out until the banner is accepted) and confirm the setup with whoever owns privacy; a

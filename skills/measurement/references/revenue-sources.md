@@ -11,7 +11,7 @@ schema** before saving any query. Look first, e.g.
 
 | source | when | how it reaches PostHog | extra cost |
 |---|---|---|---|
-| `stripe` (default) | web checkout on Stripe | Stripe data warehouse source; PostHog revenue analytics on top | none beyond Stripe's fees |
+| `stripe` (usual for web billing) | web checkout on Stripe | Stripe data warehouse source; PostHog revenue analytics on top | none beyond Stripe's fees |
 | `revenuecat` | mobile in-app subscriptions, or mobile plus web | RevenueCat data warehouse source; HogQL over its tables | RevenueCat's own pricing (free to $2,500 tracked revenue a month, then 1%; verify) |
 | `paddle` · `chargebee` · `polar` | those billing platforms | their data warehouse sources; HogQL | none |
 | `events` | own billing or a license server | the product sends revenue events | none |
@@ -94,7 +94,7 @@ same PostHog person as the visitor:
 
 - Online purchases: use the product's user id, which the app already passes to `identify`.
 - Offline license keys (a key bought or emailed, activated later in a desktop app): send the purchase
-  with the license id or buyer email as the `distinctId`. When the app first activates the key, call
+  with the license id as the `distinctId` (never an email: even hashed it is personal data; a hashed email is a last resort that needs privacy sign-off). When the app first activates the key, call
   `alias` (or `identify` with the license id as an alias, per the SDK) to join that id to the app's
   person. Use a hashed email if the raw address would otherwise appear as an id.
 

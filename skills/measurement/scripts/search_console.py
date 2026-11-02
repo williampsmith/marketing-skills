@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Search Console through treg's connected account: clicks, rankings and pages in search → gtm.py metrics.
 
-    python3 search_console.py sc-domain:example.com [--days 28] [--brand acme --brand "acme app"] [--dry-run]
+    python3 search_console.py [sc-domain:example.com] [--brand acme --brand "acme app"] [--dry-run]
+
+The property defaults to the one stored with `gtm.py connect search_console <property>`.
 
 Writes these metrics (track demand), each a 28-day window ending 3 days ago (Search Console lags):
     search_clicks_28d          total clicks (site total, no dimensions: summing rows undercounts)
-    nonbrand_clicks_28d        clicks on queries that don't contain a brand term
+    nonbrand_clicks_28d        clicks on queries that don't contain a brand term (anonymised queries are
+                               missing from query rows, so this undercounts against the total)
     query_top10_share          share of non-brand queries with ≥ 10 impressions whose average position ≤ 10,
                                or of the queries in <state>/seo/queries.csv when the seo skill keeps a query map
     indexed_ratio              proxy: share of sitemap URLs that appeared in search at least once in 90 days
@@ -34,32 +37,53 @@ ENDPOINT = "google-search-console.performance"
 LAG_DAYS = 3
 
 
+def run_treg(argv: list[str]) -> subprocess.CompletedProcess:
+    """The only process call (tests replace it)."""
+    return subprocess.run(argv, capture_output=True, text=True, timeout=120)
+
+
 def treg_call(site: str, body: dict) -> dict:
-    """The only network call besides the sitemap fetch (tests replace it)."""
+    """One Search Console query through treg. Any failure raises; an error is never read as zero."""
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
         json.dump(body, f)
         path = f.name
     try:
-        p = subprocess.run(["treg", "--json", "call", ENDPOINT, "--method", "POST", "--query", f"siteUrl={site}",
-                            "--data", "@" + path], capture_output=True, text=True, timeout=120)
+        try:
+            p = run_treg(["treg", "--json", "call", ENDPOINT, "--method", "POST", "--query", f"siteUrl={site}",
+                          "--data", "@" + path])
+        except FileNotFoundError:
+            raise RuntimeError("the treg CLI isn't installed or isn't on PATH") from None
     finally:
         Path(path).unlink(missing_ok=True)
     lines = p.stdout.strip().splitlines()
-    if not lines:
-        raise RuntimeError((p.stderr or "treg returned nothing").strip()[:300])
-    return json.loads(lines[-1])
+    if p.returncode != 0 or not lines:
+        raise RuntimeError(f"treg exited {p.returncode}: {(lines[-1] if lines else p.stderr or 'no output').strip()[:300]}")
+    d = json.loads(lines[-1])
+    err = _find(d, "error")
+    status = _find(d, "status")
+    if err or (isinstance(status, int) and status >= 400):
+        raise RuntimeError(f"Search Console error: {str(err or status)[:300]}")
+    if _find(d, "rows") is None and _find(d, "responseAggregationType") is None:
+        raise RuntimeError(f"unrecognised Search Console response: {str(d)[:300]}")
+    return d
+
+
+def _find(obj, key):
+    """First value for key anywhere in treg's envelope."""
+    if isinstance(obj, dict):
+        if key in obj:
+            return obj[key]
+        for v in obj.values():
+            r = _find(v, key)
+            if r is not None:
+                return r
+    return None
 
 
 def rows_of(resp) -> list[dict]:
-    """Find the Search Console `rows` list wherever treg's envelope put it."""
-    if isinstance(resp, dict):
-        if isinstance(resp.get("rows"), list):
-            return resp["rows"]
-        for v in resp.values():
-            r = rows_of(v)
-            if r:
-                return r
-    return []
+    """The Search Console `rows` list wherever treg's envelope put it; [] when the property has no data."""
+    r = _find(resp, "rows")
+    return r if isinstance(r, list) else []
 
 
 def fetch_sitemap_urls(site_url: str, limit: int = 5000) -> list[str]:
@@ -104,7 +128,7 @@ def query_map(root: Path) -> set[str]:
 def measure(site: str, site_url: str, brands: list[str], days: int, call=treg_call, sitemap=fetch_sitemap_urls) -> dict:
     start, end = window(days)
     total = rows_of(call(site, {"startDate": start, "endDate": end}))
-    clicks = int(sum(r.get("clicks", 0) for r in total)) if total else 0
+    clicks = int(sum(r.get("clicks", 0) for r in total)) if total else None  # no rows: no data yet, not zero
     qrows = rows_of(call(site, {"startDate": start, "endDate": end, "dimensions": ["query"], "rowLimit": 25000}))
     nonbrand = [r for r in qrows if not is_brand(r["keys"][0], brands)]
     mapped = query_map(gtm.R())
@@ -118,7 +142,7 @@ def measure(site: str, site_url: str, brands: list[str], days: int, call=treg_ca
         basis = "non-brand queries with 10+ impressions"
     top10 = sum(1 for r in pool if r.get("position", 99) <= 10)
     out = {"window": [start, end], "search_clicks_28d": clicks,
-           "nonbrand_clicks_28d": int(sum(r.get("clicks", 0) for r in nonbrand)),
+           "nonbrand_clicks_28d": int(sum(r.get("clicks", 0) for r in nonbrand)) if clicks is not None else None,
            "query_top10_share": round(top10 / denom, 4) if denom else None, "top10_basis": basis}
     if site_url:
         urls = sitemap(site_url)
@@ -133,19 +157,23 @@ def measure(site: str, site_url: str, brands: list[str], days: int, call=treg_ca
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("site", help="Search Console property: sc-domain:example.com or https://example.com/")
+    ap.add_argument("site", nargs="?", help="Search Console property (default: the one `gtm.py connect` stored)")
     ap.add_argument("--site-url", help="site to read the sitemap from (default gtm.json site_url)")
     ap.add_argument("--brand", action="append", default=[], help="brand term; repeatable (default: from gtm.json)")
-    ap.add_argument("--days", type=int, default=28)
     ap.add_argument("--dry-run", action="store_true", help="measure and print; write no metrics")
     a = ap.parse_args()
     s = gtm.load_state()
+    stored = s["connections"].get("search_console")
+    site = a.site or (stored if isinstance(stored, str) else None)
+    if not site:
+        print("no property: pass it, or `gtm.py connect search_console sc-domain:example.com`", file=sys.stderr)
+        return 1
     brands = a.brand or s.get("brand_terms") or []
     if not brands:
         print("no brand terms: pass --brand or set brand_terms in gtm.json (non-brand numbers need them)", file=sys.stderr)
         return 1
     try:
-        out = measure(a.site, a.site_url or s.get("site_url", ""), brands, a.days)
+        out = measure(site, a.site_url or s.get("site_url", ""), brands, 28)
     except (RuntimeError, json.JSONDecodeError, subprocess.TimeoutExpired) as e:
         print(f"search console: {e}", file=sys.stderr)
         return 1

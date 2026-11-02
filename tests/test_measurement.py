@@ -96,13 +96,17 @@ class PostHogTest(StoreCase):
         self.assertEqual(fake.calls[0]["headers"]["Authorization"], "Bearer phx_test")
         self.assertIn("/api/projects/42/query/", fake.calls[0]["url"])
 
-    def test_pull_refuses_unsafe_names_and_needs_config(self):
+    def test_pull_needs_config_and_escapes_names(self):
         self.assertEqual(self.run_cli("pull")[0], 1)
         s = json.loads((gtm.R() / "gtm.json").read_text())
-        s["measurement"] = {"stage_events": {"visit": "x' OR 1=1 --"}}
+        s["measurement"] = {"stage_events": {"visit": "x' OR 1=1 --", "signup": "signed up"},
+                            "source_properties": ["heard-from"]}
         (gtm.R() / "gtm.json").write_text(json.dumps(s))
-        self.assertEqual(self.run_cli("pull")[0], 1)
-        self.assertIn("unsafe", self.last_err)
+        plan = self.json_cli("pull", "--dry-run")["would_query"]
+        q = {p["metric"]: p["hogql"] for p in plan}
+        self.assertIn("event = 'x\\' OR 1=1 --'", q["stage:visit"])
+        self.assertIn("event = 'signed up'", q["stage:signup"])
+        self.assertIn("person.properties['heard-from']", q["source_capture_rate"])
 
     def test_eu_host_and_missing_keys(self):
         os.environ["POSTHOG_HOST"] = "eu"
@@ -114,18 +118,64 @@ class PostHogTest(StoreCase):
         self.assertEqual(self.run_cli("query", "SELECT 1")[0], 1)
         self.assertIn("POSTHOG_PERSONAL_API_KEY", self.last_err)
 
-    def test_tracking_check_sets_tracking_ok(self):
+    def test_tracking_check_is_decided_by_events_not_html(self):
         self.stage_events()
-        ph.fetch_page = lambda url: "<script>posthog.init('phc_x',{api_host:'https://us.i.posthog.com'})</script>"
-        ph.http = FakeHTTP({"'signed_up'": 7})
+        ph.fetch_page = lambda url: "<html>bundled app, no inline snippet</html>"
+        ph.http = FakeHTTP({"INTERVAL 2 DAY": 500})                     # events arriving: alive
         code, out = self.run_cli("tracking-check", "--url", "https://example.com")
         self.assertEqual(code, 0, self.last_err)
         self.assertEqual(gtm.metric_latest("tracking_ok")["value"], 1)
-        ph.fetch_page = lambda url: "<html>no analytics</html>"
+        self.assertIsNone(json.loads(out)["snippet_in_html"])          # not even fetched
+        ph.http = FakeHTTP({"INTERVAL 2 DAY": 0})                       # silence: explain with the HTML
         code, out = self.run_cli("tracking-check", "--url", "https://example.com")
         self.assertEqual(code, 1)
-        self.assertIn("no PostHog snippet", json.loads(out)["problems"][0])
+        notes = json.loads(out)["notes"]
+        self.assertTrue(any("no PostHog snippet" in n for n in notes))
         self.assertEqual(gtm.metric_latest("tracking_ok")["value"], 0)
+
+    def test_quiet_first_step_is_not_broken(self):
+        self.stage_events()
+        ph.http = FakeHTTP({"WHERE timestamp": 300, "'signed_up'": 0})
+        code, out = self.run_cli("tracking-check")
+        self.assertEqual(code, 0)
+        self.assertTrue(any("quiet product" in n for n in json.loads(out)["notes"]))
+
+    def test_sync_runs_pull_when_flush_fails_and_reports_errors(self):
+        self.stage_events()
+        gtm.outbox("marketing_metric", {"metric": "x", "value": 1})
+        os.environ.pop("POSTHOG_PROJECT_API_KEY")                        # capture key missing
+        fake = FakeHTTP({"'$pageview'": 10})
+        ph.http = fake
+        code, out = self.run_cli("sync")
+        self.assertEqual(code, 1)
+        self.assertTrue(any("flush" in e for e in json.loads(out)["errors"]))
+        self.assertEqual(gtm.metric_latest("stage:visit")["value"], 10)   # the pull still ran
+        os.environ["POSTHOG_PROJECT_API_KEY"] = "phc_test"
+        ph.http = FakeHTTP(fail_on=lambda n, url, body: "/query/" in url)
+        code, out = self.run_cli("sync")
+        self.assertEqual(code, 1)                                         # every query failed
+        self.assertTrue(any(e.startswith("pull:") for e in json.loads(out)["errors"]))
+
+    def test_network_errors_become_clean_failures(self):
+        def timeout(*a, **k):
+            raise ph.PostHogError("POST x → TimeoutError: timed out")
+        ph.http = timeout
+        self.assertEqual(self.run_cli("query", "SELECT 1")[0], 1)
+        self.assertIn("TimeoutError", self.last_err)
+        self.assertEqual(self.run_cli("check")[0], 1)
+
+    def test_only_allowlisted_properties_leave_and_text_is_redacted(self):
+        props = ph.clean("marketing_bet", {"id": "b1", "hypothesis": "jane@x.com said so", "status": "won",
+                                           "result": {"effect": 0.1, "note": "x"}, "contact": "y"})
+        self.assertEqual(set(props), {"id", "status", "result_effect"})
+        self.assertEqual(ph.clean("marketing_metric", {"metric": "m", "source": "mail jane@x.com"})["source"],
+                         "mail [email]")
+
+    def test_ingestion_host_maps_to_app_host(self):
+        os.environ["POSTHOG_HOST"] = "https://eu.i.posthog.com/"
+        self.assertEqual(ph.hosts(), ("https://eu.i.posthog.com", "https://eu.posthog.com"))
+        os.environ["POSTHOG_HOST"] = "EU"
+        self.assertEqual(ph.hosts()[1], "https://eu.posthog.com")
 
 
 class SearchConsoleTest(StoreCase):
@@ -165,9 +215,42 @@ class SearchConsoleTest(StoreCase):
         self.assertEqual(out["query_top10_share"], 0.5)
         self.assertEqual(out["top10_basis"], "query map")
 
-    def test_cli_needs_brand_terms(self):
-        self.assertEqual(self.run_cli("sc-domain:acme.com")[0], 1)
+    def test_cli_needs_a_property_and_brand_terms(self):
+        self.assertEqual(self.run_cli()[0], 1)
+        self.assertIn("property", self.last_err)
+        self.json_cli("connect", "search_console", "sc-domain:acme.com", module=gtm)
+        self.assertEqual(self.run_cli()[0], 1)
         self.assertIn("brand", self.last_err)
+
+    def test_treg_errors_raise_and_write_nothing(self):
+        class P:
+            def __init__(self, code, out):
+                self.returncode, self.stdout, self.stderr = code, out, ""
+        real = sc.run_treg
+        try:
+            sc.run_treg = lambda argv: P(1, json.dumps({"error": {"status": 403}}))
+            with self.assertRaises(RuntimeError):
+                sc.treg_call("sc-domain:acme.com", {})
+            sc.run_treg = lambda argv: P(0, json.dumps({"result": {"output": {"error": "quota"}}}))
+            with self.assertRaises(RuntimeError):
+                sc.treg_call("sc-domain:acme.com", {})
+            seen = {}
+
+            def ok(argv):
+                seen["argv"] = argv
+                return P(0, json.dumps({"result": {"output": {"responseAggregationType": "byProperty"}}}))
+            sc.run_treg = ok
+            sc.treg_call("sc-domain:acme.com", {"startDate": "x"})
+            self.assertEqual(seen["argv"][:8], ["treg", "--json", "call", sc.ENDPOINT, "--method", "POST",
+                                                 "--query", "siteUrl=sc-domain:acme.com"])
+        finally:
+            sc.run_treg = real
+
+    def test_no_rows_is_no_data_not_zero(self):
+        out = sc.measure("sc-domain:acme.com", "", ["acme"], 28, call=lambda site, body: {"result": {}},
+                         sitemap=lambda u: [])
+        self.assertIsNone(out["search_clicks_28d"])
+        self.assertIsNone(out["nonbrand_clicks_28d"])
 
 
 class ReportTest(StoreCase):
@@ -198,7 +281,7 @@ class ConnectTest(StoreCase):
         self.assertIn("connect posthog", skipped["tracking_check"])
         self.assertIn("connect search_console", skipped["search_console"])
         self.json_cli("connect", "posthog")
-        self.json_cli("connect", "search_console")
+        self.json_cli("connect", "search_console", "sc-domain:acme.com")
         due = [j["job"] for j in self.json_cli("tick")["due"]]
         self.assertIn("tracking_check", due)
         self.assertIn("metrics_sync", due)
@@ -211,3 +294,5 @@ class ConnectTest(StoreCase):
         self.assertEqual(self.run_cli("connect", "revenue", "venmo")[0], 1)
         self.assertIsNone(self.json_cli("connect", "revenue", "none")["revenue_source"])
         self.assertFalse(self.json_cli("connect", "posthog", "off")["posthog"])
+        self.assertEqual(self.run_cli("connect", "posthog", "false")[0], 1)
+        self.assertEqual(self.run_cli("connect", "search_console", "acme.com")[0], 1)
