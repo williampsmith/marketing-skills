@@ -36,17 +36,20 @@ jobs:
       - name: Run evals
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EVAL_TAG: ${{ inputs.tag }}
+          EVAL_MODEL: ${{ inputs.model }}
+          EVAL_MAX_COST: ${{ inputs.max_cost_usd }}
         run: |
           npx -y @anthropic-ai/claude-code@2.1.316 plugin eval . \
             --trust-plugin \
             --allow-tools "Bash(python3 *)" \
-            --tag "${{ inputs.tag }}" \
+            --tag "$EVAL_TAG" \
             --ablation none \
             --runs 1 \
-            --model "${{ inputs.model }}" \
+            --model "$EVAL_MODEL" \
             --threshold 0.8 \
             --no-publish \
-            --max-cost-usd "${{ inputs.max_cost_usd }}" \
+            --max-cost-usd "$EVAL_MAX_COST" \
             --json results.json
       - name: Keep results
         if: always()

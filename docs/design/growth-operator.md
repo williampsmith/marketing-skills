@@ -71,7 +71,7 @@ site and customer research, then a human confirms it. Fields:
 
 | field | values | why it matters |
 |---|---|---|
-| `motion` | `self_serve` · `sales_assisted` · `enterprise` · `consumer_app` · `ecommerce` · `open_source_devtool` | picks the funnel template |
+| `motion` | `self_serve` · `sales_assisted` · `enterprise` · `consumer_app` · `ecommerce` · `oss_devtool` | picks the funnel template |
 | `acv_usd` | number (annual contract value; for consumer, lifetime value) | bounds what each channel may cost per customer |
 | `buyer` / `user` | roles, seniority, team | who the content and outreach address |
 | `buying_committee` | 1 · 2-4 · 5+ | multi-stakeholder deals favour proof, comparisons and sales material |
@@ -79,7 +79,7 @@ site and customer research, then a human confirms it. Fields:
 | `attention` | where buyers look, ranked, with evidence (e.g. "LinkedIn: 0.8, from customer-research") | the strongest fit input; measured, not assumed |
 | `regulated` | none · light · heavy (finance, health, legal, gov) | restricts claims, channels and creative formats |
 | `geo` | markets | channel availability and compliance (cold email rules differ by country) |
-| `stage` | prelaunch · launched · scaling | what is measurable yet |
+| `stage` | prelaunch · launched | what is measurable yet (`gtm.py stage launched` on launch day) |
 
 `attention` comes from the `customer-research` skill: where the ICP posts, asks questions and
 reviews (Reddit, LinkedIn, Stack Overflow, G2, TikTok, analyst reports, forums), measured
@@ -94,7 +94,7 @@ through treg. It is re-checked in `strategy_review` quarterly.
 | enterprise | reach (named accounts aware) → engaged account → meeting → opportunity → won → expanded | pipeline from target accounts |
 | consumer_app | reach → install → activated → retained D30 → paying | retained users |
 | ecommerce | reach → visit → add to cart → purchase → repeat | contribution margin |
-| open_source_devtool | reach → repo/docs visit → install → active project → paid/enterprise lead | active installs |
+| oss_devtool | reach → repo/docs visit → install → active project → paid/enterprise lead | active installs |
 
 Floors start from benchmarks in `references/benchmarks.md` for the motion and are replaced by the
 product's own baseline after 30 days of data.
@@ -221,8 +221,9 @@ and each skill declares which channels it serves, so fit filters skills as well.
    minimum in `gtm.json`), reach is the bottleneck by definition.
 4. **Fit.** A track whose eligible channels have a summed fit below 0.5 can't be the focus; its
    problems are reported for a human to decide.
-5. **Hysteresis.** The focus holds until its rung is met, the monthly `strategy_review`, or another
-   stage falls below half its floor.
+5. **Hysteresis.** The focus holds for 30 days, until its track stops being workable, or until another
+   stage falls below half its floor. (Implemented in 0.4 as a fixed 30-day hold, roughly the
+   monthly `strategy_review` cadence.)
 
 **Discoverability is a standing priority.** Buyers in every motion now research and shortlist with
 AI assistants, and the cost of being absent or misdescribed compounds, so Discoverability is not

@@ -64,3 +64,6 @@ the loop and `docs/design/growth-operator.md` for the design being implemented.
   `compliance.md`. Personal data stays in the state store, never in PostHog properties or the repo.
 - Reference text is written from first principles; don't copy text from other skill libraries.
 - Version: bump `version` in both manifests together.
+- Turning a job off: set `"enabled": false` on it in gtm.json. Deleting it doesn't stick; `upgrade()` restores
+  missing default jobs.
+- Run scripts with the working directory at the product repo root; gtm.py refuses the plugin repo itself.

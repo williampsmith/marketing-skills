@@ -21,7 +21,7 @@ filtered by what fits the product and who buys it.
 ```mermaid
 flowchart TD
     P["GTM profile<br/>motion · deal size · cycle · where buyers look"] --> FIT["Fit<br/>which channels are worth trying"]
-    M["Metrics<br/>funnel counts · audits · access checks"] --> T
+    M["Metrics<br/>funnel counts · audits · access checks"]
     subgraph T["Tracks (each a ladder of rungs)"]
         direction LR
         T0["Measurement<br/>instrumented → attributed<br/>→ funnel visible"]
@@ -29,13 +29,14 @@ flowchart TD
         T2["Demand<br/>indexed → ranking<br/>→ visited → pipeline"]
         T3["Conversion<br/>first step → activating<br/>→ paying"]
         T4["Retention<br/>retained → expanding<br/>→ referring"]
+        T5["Paid (off until a human turns it on)<br/>tracked → profitable<br/>→ scaling"]
     end
+    M --> T
     FIT --> F
-    T --> F["Focus rules<br/>1 alerts first · 2 measurement gates the funnel<br/>3 weakest stage · 4 fit · 5 hold 30 days"]
+    T --> F["Focus rules<br/>1 alerts first · 2 prelaunch: discoverability<br/>3 measurement gates the funnel · 4 weakest stage<br/>5 fit · 6 hold 30 days"]
     F --> W["Work: 60% focus · 25% discoverability until preferred · rest explores"]
 ```
 
-A paid track (tracked → profitable → scaling) exists and is off until a human turns it on.
 Discoverability is a standing priority: buyers in every sales motion now shortlist with AI
 assistants, so it keeps a share of the work until it reaches `preferred`.
 
@@ -43,15 +44,16 @@ assistants, so it keeps a share of the work until it reaches `preferred`.
 
 ```mermaid
 flowchart TD
-    A["Daily scheduler<br/>(Hermes cron, /schedule, CI)"] --> B["gtm tick"]
+    A["Daily scheduler<br/>(Hermes cron, /schedule, CI)"] --> B["gtm skill, tick mode"]
     B --> C["gtm.py decides:<br/>focus, due jobs, budget,<br/>cooldowns, bets past their check date"]
-    C --> D["Run due jobs<br/>audit · access check · page watch · outreach refresh"]
-    C --> E["Work session, at most weekly:<br/>2 actions, each opened as a bet"]
-    E --> F["Outputs<br/>PRs for pages and site changes<br/>drafts for outreach and profiles"]
+    C --> D["Run due jobs<br/>audit · access check · page watch · outreach refresh<br/>and, weekly, the work session: 2 actions, each a bet"]
+    D --> E["Metrics and audit scores<br/>written to the state store"]
+    D --> F
+    F["Outputs<br/>PRs for pages and site changes<br/>drafts for outreach and profiles"]
     D --> G["Digest in the state store<br/>'Needs you' list sent to chat or GitHub"]
     F --> G
     G --> H["Human merges PRs,<br/>sends drafts, approves proposals"]
-    H -.->|"bets close against the metrics"| C
+    E -.->|"bets close against the metrics"| C
 ```
 
 Every improvement is a **bet** with a metric, a baseline, an expected value and a check date. When
@@ -87,7 +89,7 @@ team's dashboard for funnel and marketing metrics.
   keywords, forums, page reads) through it. Install the CLI and sign in:
   `curl -fsSL https://treg.to/install.sh | sh`, then follow https://treg.to/llms.txt. Paid calls
   draw on a prepaid team balance; a typical month at `gtm` defaults is about $8-12. Without treg,
-  the skills fall back to plain web search and skip measurement, and they say so.
+  the skills fall back to plain web search and skip the paid audit and access-check jobs, and they say so.
 - **`python3`** (3.9 or newer). The scripts use only the standard library; nothing to `pip install`.
 - **`gh`**, signed in, if you want `gtm` to open PRs.
 

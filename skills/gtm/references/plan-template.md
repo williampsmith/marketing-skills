@@ -19,8 +19,8 @@ only after a human accepts them (`gtm.py learnings --accept <bet id>`).
 ## Active bets (mirror of `gtm.py bet list --status open`)
 | id | track · tactic | hypothesis | metric: baseline → expected | method | checks on |
 |---|---|---|---|---|---|
-| 2026-11-12-access | discoverability · access_fix | Letting search bots in makes the site citable | citation_rate 0 → 0.1 | before_after | 2026-12-03 |
-| 2026-11-12-vs-acme | discoverability · comparison_page | A sourced comparison wins "vs Acme" prompts | mention:comparison 0.1 → 0.3 | holdout | 2026-12-10 |
+| 2026-11-12-access | discoverability · access_fix | Letting search bots in makes the site citable | ai:citation 0 → 0.1 | before_after | 2026-12-03 |
+| 2026-11-12-vs-acme | discoverability · comparison_page | A sourced comparison wins "vs Acme" prompts | ai:mention:comparison 0.1 → 0.3 (control ai:mention:category) | holdout | 2026-12-10 |
 
 ## Backlog (ranked)
 1. <action> — track/rung — impact · confidence · effort — source (audit run, probe, funnel stage, target)

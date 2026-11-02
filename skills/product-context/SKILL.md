@@ -14,7 +14,7 @@ Two outputs, kept in step:
 | output | for | written by |
 |---|---|---|
 | `<state>/product-context.md` | the agent and humans: prose, tables, sources | this skill, from `references/product-context-template.md` |
-| `profile` block in `<state>/gtm.json` | `gtm.py fit`, `focus`, `funnel` | this skill, after the human confirms |
+| `profile` block in `<state>/gtm.json` | `gtm.py fit`, `focus`, `funnel` | this skill via `gtm.py profile`; confirmed once the human approves |
 
 `<state>` is the store root: `python3 ../gtm/scripts/gtm.py where` → `"root"`. It is never assumed to
 be inside the product repo.
@@ -68,8 +68,8 @@ python3 ../gtm/scripts/gtm.py profile --motion sales_assisted --acv 9000 --cycle
   product-context.md. Weights come from measured evidence via `../customer-research` when it is
   installed (`--attention short_video=0.1`), never from your impression of where buyers hang out.
 - Any change unconfirms the profile. Until it is confirmed, `gtm.py fit` uses the motion's defaults
-  alone (deal size, cycle, regulation and attention are ignored) and says so, and jobs that require a
-  confirmed profile are skipped.
+  alone (deal size, cycle, regulation and attention are ignored) and says so, and any job that declares it requires a
+  confirmed profile is skipped.
 
 Then run `python3 ../gtm/scripts/gtm.py fit` and show the human the channels it rules out and why.
 If a result looks wrong, the fix is usually a profile field, not an override.
@@ -77,8 +77,8 @@ If a result looks wrong, the fix is usually a profile field, not an override.
 ### 4. Confirm with the human
 
 Present the GTM profile table, the positioning block and the fit result together. Ask for
-corrections in one round. Apply them, run `gtm.py profile --confirm`, and log the date in the
-file's changelog.
+corrections in one round. Apply them; once the human approves in this conversation, run
+`gtm.py profile --confirm` (never in a scheduled run) and log the date in the file's changelog.
 
 ## Sections and their rules
 

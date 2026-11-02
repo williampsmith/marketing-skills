@@ -1,6 +1,6 @@
 # Installing the heartbeat
 
-One scheduler entry, daily, that runs `gtm tick` in the product repo. Everything else (what's due,
+One scheduler entry, daily, that runs the `gtm` skill in tick mode in the product repo. Everything else (what's due,
 weekly or quarterly jobs, events) is decided by `gtm.py tick` from `<state>/gtm.json`. Never create
 one scheduler entry per job; then the schedule lives where the agent can't see or change it.
 
@@ -77,14 +77,16 @@ jobs:
         with: {path: product}
       - uses: actions/checkout@v4
         with: {repository: acme/product-marketing, token: "${{ secrets.STATE_REPO_TOKEN }}", path: state}
+      - uses: actions/checkout@v4
+        with: {repository: williampsmith/marketing-skills, ref: main, path: plugin}   # pin a release tag in production
       - name: access check
         working-directory: product
         run: |
           mkdir -p "$MARKETING_STATE/access"
           mv "$MARKETING_STATE/access/latest.json" "$MARKETING_STATE/access/previous.json" 2>/dev/null || true
-          python3 path/to/skills/ai-search-optimization/scripts/check_ai_access.py "$SITE" / /pricing \
+          python3 "$GITHUB_WORKSPACE/plugin/skills/ai-search-optimization/scripts/check_ai_access.py" "$SITE" / /pricing \
             --json "$MARKETING_STATE/access/latest.json" || echo "problems found"
-          python3 path/to/skills/gtm/scripts/gtm.py record access_check
+          python3 "$GITHUB_WORKSPACE/plugin/skills/gtm/scripts/gtm.py" record access_check
       - name: push state
         working-directory: state
         run: |
@@ -101,5 +103,5 @@ the digest. That split is the most robust setup.
 ## Any other host
 
 Anything that can run an agent with this skill on a daily timer works: cron plus a headless agent
-CLI, or a workflow tool. The contract is the same: one daily `gtm tick`, the repo checked out, the
+CLI, or a workflow tool. The contract is the same: one daily tick-mode run of `gtm`, the repo checked out, the
 state store reachable, treg available, and `python3`.

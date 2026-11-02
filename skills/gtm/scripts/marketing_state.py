@@ -101,8 +101,20 @@ def load_config() -> dict:
     return c
 
 
+def normalize_spec(spec: str, root: Path | None = None) -> str:
+    """Store specs are saved absolute: a relative directory means relative to the product repo root."""
+    spec = spec.strip()
+    if spec == "repo" or is_git_url(spec):
+        return spec
+    p = Path(spec).expanduser()
+    if not p.is_absolute():
+        p = (root or repo_root()) / p
+    return str(p.resolve())
+
+
 def register(slug: str, spec: str) -> None:
     """Remember which store a product uses, so later runs resolve it without an env var."""
+    spec = normalize_spec(spec)
     c = load_config()
     c["stores"][slug] = spec
     config_path().parent.mkdir(parents=True, exist_ok=True)
@@ -118,25 +130,46 @@ def _from_spec(spec: str, slug: str, root: Path, source: str) -> Store:
     return Store(Path(spec).expanduser().resolve(), "dir", slug, None, source)
 
 
+class StoreError(RuntimeError):
+    pass
+
+
+def is_plugin_repo(root: Path) -> bool:
+    p = root / ".claude-plugin" / "plugin.json"
+    try:
+        return p.exists() and json.loads(p.read_text()).get("name") == "marketing"
+    except (OSError, ValueError):
+        return False
+
+
 def resolve(cwd: Path | None = None) -> Store:
     root = repo_root(cwd)
     slug = repo_slug(root)
     env = os.environ.get("MARKETING_STATE")
     if env:
-        return _from_spec(env, slug, root, "env MARKETING_STATE")
+        return _from_spec(normalize_spec(env, root), slug, root, "env MARKETING_STATE")
     spec = load_config()["stores"].get(slug)
     if spec:
         return _from_spec(spec, slug, root, f"{config_path()}")
+    if is_plugin_repo(root):
+        raise StoreError(f"{root} is the marketing plugin itself, not a product: run from the product repo root "
+                         "(call the plugin's scripts by absolute path)")
+    moved = root / LEGACY_DIR / "MOVED"
+    if moved.exists():
+        raise StoreError(f"state was migrated out of {root / LEGACY_DIR} ({moved.read_text().strip()}); "
+                         "on this host run `gtm.py store use <that store>` or set MARKETING_STATE")
     if (root / LEGACY_DIR / "gtm.json").exists():
         return Store(root / LEGACY_DIR, "repo", slug, None, "found .marketing/gtm.json in the repo")
     return Store(home() / slug, "dir", slug, None, "default")
 
 
 def state_root(cwd: Path | None = None, create: bool = True) -> Path:
-    r = resolve(cwd).root
+    st = resolve(cwd)
+    if st.backend == "git" and not (st.root / ".git").exists():
+        raise StoreError(f"the git state store isn't cloned yet: run `gtm.py sync pull` first ({st.remote})")
     if create:
-        r.mkdir(parents=True, exist_ok=True)
-    return r
+        st.root.mkdir(parents=True, exist_ok=True)
+    return st.root
 
 
 # --------------------------------------------------------------------------- git backend
@@ -145,9 +178,12 @@ def pull(store: Store) -> str:
     if store.backend != "git":
         return f"{store.backend} backend: nothing to pull"
     if not (store.root / ".git").exists():
+        if store.root.exists() and any(store.root.iterdir()):
+            raise RuntimeError(f"{store.root} exists but isn't a clone of {store.remote}; move it aside first")
         store.root.parent.mkdir(parents=True, exist_ok=True)
         _git(["clone", "--quiet", store.remote, str(store.root)])
         return f"cloned {store.remote}"
+    _check_clone(store)
     if _git(["status", "--porcelain"], cwd=store.root):
         raise RuntimeError(f"state clone {store.root} has uncommitted changes; push or inspect them first")
     has_upstream = subprocess.run(["git", "rev-parse", "--abbrev-ref", "@{u}"], cwd=store.root,
@@ -158,10 +194,20 @@ def pull(store: Store) -> str:
     return "pulled"
 
 
+def _check_clone(store: Store) -> None:
+    """Refuse to touch any git repo other than the store's own clone (never a parent repo)."""
+    if not (store.root / ".git").exists():
+        raise RuntimeError(f"{store.root} is not a clone; run `gtm.py sync pull` first")
+    top = Path(_git(["rev-parse", "--show-toplevel"], cwd=store.root)).resolve()
+    if top != store.root.resolve():
+        raise RuntimeError(f"{store.root} is inside another repo ({top}); refusing")
+
+
 def push(store: Store, message: str) -> str:
     """Commit everything in the state clone and push. Never forces."""
     if store.backend != "git":
         return f"{store.backend} backend: nothing to push"
+    _check_clone(store)
     _git(["add", "-A"], cwd=store.root)
     if not _git(["status", "--porcelain"], cwd=store.root):
         return "no changes"

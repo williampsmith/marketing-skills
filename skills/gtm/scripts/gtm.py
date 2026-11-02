@@ -7,6 +7,7 @@ experiment results.
 
     python3 gtm.py where                         # the state store this repo resolves to
     python3 gtm.py init [--stage launched] [--motion self_serve] [--budget 20]
+    python3 gtm.py stage launched                # launch day
     python3 gtm.py tick                          # JSON: focus, due jobs, skipped, alerts, budget, tracks
     python3 gtm.py status                        # human summary, read-only
     python3 gtm.py focus                         # which track to work on and why
@@ -14,7 +15,7 @@ experiment results.
     python3 gtm.py tracks | ladder               # rung status per track (ladder = discoverability)
     python3 gtm.py next                          # work-session slots and ranked tactics
     python3 gtm.py budget [--need 1.50]          # exit 2 if --need would exceed the monthly cap
-    python3 gtm.py record JOB [--cost 0.6 | --from-run DIR] [--key K] [--failed] [--mix focus,secondary]
+    python3 gtm.py record JOB [--cost 0.6 | --from-run DIR] [--key K ...] [--failed] [--mix focus,standing] [--cursor SHA]
     python3 gtm.py may JOB KEY                   # exit 3 if KEY is inside JOB's cooldown
     python3 gtm.py metric add NAME VALUE [--source S] [--track T] [--date D]
     python3 gtm.py metric get NAME [--days 90]
@@ -36,12 +37,15 @@ Stdlib only; Python 3.9+.
 from __future__ import annotations
 
 import argparse
+import copy
 import datetime as dt
 import json
 import os
 import random
 import shutil
 import sys
+import tempfile
+from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
 
@@ -205,6 +209,61 @@ def R() -> Path:
     return _root_for(os.getcwd(), os.environ.get("MARKETING_STATE", ""), os.environ.get("MARKETING_HOME", ""))
 
 
+SKILLS_DIR = SCRIPTS.parents[1]
+
+
+def skill_installed(name: str) -> bool:
+    """Sibling skills ship together, but a phase may not have them all yet (or a host may drop one)."""
+    return (SKILLS_DIR / name / "SKILL.md").exists()
+
+
+_lock_depth = 0
+
+
+@contextmanager
+def locked():
+    """One writer at a time per store: parallel subagents each call gtm.py record. Reentrant."""
+    global _lock_depth
+    if _lock_depth:
+        _lock_depth += 1
+        try:
+            yield
+        finally:
+            _lock_depth -= 1
+        return
+    st = ms.resolve()
+    lock = ms.home() / "locks" / f"{st.slug}-{st.backend}.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock, "a+") as fh:
+        try:
+            import fcntl
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+            unlock = lambda: fcntl.flock(fh.fileno(), fcntl.LOCK_UN)  # noqa: E731
+        except ImportError:  # Windows
+            import msvcrt
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+            unlock = lambda: (fh.seek(0), msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1))  # noqa: E731
+        _lock_depth = 1
+        try:
+            yield
+        finally:
+            _lock_depth = 0
+            unlock()
+
+
+def atomic_write(p: Path, text: str) -> None:
+    p.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(p.parent), prefix=f".{p.name}.")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+        os.replace(tmp, p)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
 def STATE() -> Path:
     return R() / "gtm.json"
 
@@ -224,14 +283,14 @@ def read_jsonl(p: Path) -> list[dict]:
 
 
 def append_jsonl(p: Path, row: dict) -> None:
-    p.parent.mkdir(parents=True, exist_ok=True)
-    with p.open("a") as f:
-        f.write(json.dumps(row) + "\n")
+    with locked():
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("a") as f:
+            f.write(json.dumps(row) + "\n")
 
 
 def write_jsonl(p: Path, rows: list[dict]) -> None:
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    atomic_write(p, "".join(json.dumps(r) + "\n" for r in rows))
 
 
 @lru_cache(maxsize=None)
@@ -273,9 +332,11 @@ def default_state(stage: str = "launched") -> dict:
         "work_mix": {"focus": 0, "standing": 0, "explore": 0},
         "accepted_problems": [],
         "known_issues": [],
-        "ladder": DEFAULT_LADDER,
-        "jobs": {k: dict(v) for k, v in DEFAULT_JOBS.items()},
+        "ladder": copy.deepcopy(DEFAULT_LADDER),
+        "jobs": copy.deepcopy(DEFAULT_JOBS),
         "last_run": {},
+        "events": {},
+        "cursors": {},
         "keys": {},
         "failures": {},
     }
@@ -309,8 +370,7 @@ def load_state() -> dict:
 
 
 def save_state(s: dict) -> None:
-    STATE().parent.mkdir(parents=True, exist_ok=True)
-    STATE().write_text(json.dumps(s, indent=2) + "\n")
+    atomic_write(STATE(), json.dumps(s, indent=2) + "\n")
 
 
 # --------------------------------------------------------------------------- spend
@@ -618,12 +678,21 @@ def track_eligible(track: str, fits: dict) -> bool:
 
 
 # --------------------------------------------------------------------------- focus
-def _reach_track(tracks: dict, fits: dict) -> str:
-    options = [t for t in ("discoverability", "demand")
-               if tracks[t]["enabled"] and not tracks[t]["complete"] and track_eligible(t, fits)]
+def usable(track: str, tracks: dict, fits: dict) -> bool:
+    """A track can take work: on, not complete, a skill for its current rung is installed, and it fits."""
+    t = tracks[track]
+    return (t["enabled"] and not t["complete"] and any(skill_installed(x) for x in t["work_on"])
+            and track_eligible(track, fits))
+
+
+def _reach_track(tracks: dict, fits: dict) -> str | None:
+    options = [t for t in ("discoverability", "demand") if usable(t, tracks, fits)]
     if not options:
-        return "discoverability"
+        return None
     return min(options, key=lambda t: (tracks[t]["progress"], t != "discoverability"))
+
+
+MEASUREMENT_METRICS = ("tracking_ok", "source_capture_rate")
 
 
 def compute_focus(s: dict) -> dict:
@@ -631,92 +700,113 @@ def compute_focus(s: dict) -> dict:
     fun = funnel(s)
     tracks = {t: track_status(s, t, fun) for t in TRACKS}
     stage = s.get("stage", "launched")
-    alerts = []
+    alerts, notes = [], []
     disc = tracks["discoverability"]
-    for r in disc["rungs"]:
-        if r["id"] == "reachable" and stage == "prelaunch":
-            continue
-        if r["id"] in ("reachable", "known") and r["met"] is False:
-            why = r.get("why")
-            why = why if isinstance(why, str) else ("; ".join(why) if why else
-                                                     f"mention {r.get('mention')} below {r.get('threshold')}")
-            alerts.append(f"DISCOVERABILITY {r['id']}: {why}")
+    if disc["enabled"]:
+        for r in disc["rungs"]:
+            if r["id"] == "reachable" and stage == "prelaunch":
+                continue
+            if r["id"] in ("reachable", "known") and r["met"] is False:
+                why = r.get("why")
+                why = why if isinstance(why, str) else ("; ".join(why) if why else
+                                                         f"mention {r.get('mention')} below {r.get('threshold')}")
+                alerts.append(f"DISCOVERABILITY {r['id']}: {why}")
+    not_pursuing = [f"{f['label']} ({f['fit']:.2f}: {f['why'] or 'below the fit floor'})"
+                    for f in fits.values() if not f["eligible"]]
+    for t in TRACKS:
+        x = tracks[t]
+        if x["enabled"] and not x["complete"] and x["work_on"] and not any(skill_installed(k) for k in x["work_on"]):
+            notes.append(f"{t} is on `{x['current']}`, but none of its skills ({', '.join(x['work_on'])}) is installed")
 
     scored = sorted((st for st in fun["stages"] if st.get("score") is not None), key=lambda x: x["score"])
     worst = scored[0] if scored else None
     severe = [st for st in scored if st["score"] < 0.5]
-
+    base = {"track": None, "rung": None, "skills": [], "reason": "", "basis": "", "since": None, "stage": stage,
+            "secondary": None, "standing_discoverability": False, "shares": {}, "not_pursuing": not_pursuing,
+            "alerts": alerts, "notes": notes, "tracks": tracks, "fits": fits, "funnel": fun,
+            "worst_stage": worst["id"] if worst else None}
     if s.get("paused"):
-        return {"track": None, "reason": "paused", "alerts": alerts, "tracks": tracks, "fits": fits, "funnel": fun}
+        return {**base, "reason": "paused"}
+
+    m = tracks["measurement"]
+    measured_by_hand = any(metric_rows(x) for x in MEASUREMENT_METRICS)
+    gate = m["enabled"] and not m["complete"] and (skill_installed("measurement") or measured_by_hand)
+    if m["enabled"] and not m["complete"] and not gate and stage != "prelaunch":
+        notes.append("the funnel can't be judged until measurement exists: install the measurement skill, or record "
+                     "tracking_ok, source_capture_rate and stage:<id> counts daily with `gtm.py metric add`")
+
+    cand, reason = None, ""
     if stage == "prelaunch":
-        cand, reason = "discoverability", "prelaunch: be findable and described correctly on launch day"
-    elif not tracks["measurement"]["complete"]:
-        cand = "measurement"
-        reason = f"measurement gates the funnel: `{tracks['measurement']['current']}` not met"
+        cand = next((t for t in ("discoverability", "demand") if usable(t, tracks, fits)), None)
+        reason = "prelaunch: be findable and described correctly on launch day"
+    elif gate:
+        cand, reason = "measurement", f"measurement gates the funnel: `{m['current']}` not met"
     elif fun["reach_is_bottleneck"]:
         cand = _reach_track(tracks, fits)
         first = fun["stages"][0]
         reason = (f"too few {first['label']} to judge conversion ({first['count'] or 0} < {fun['min_sample']}); "
                   f"reach is the bottleneck")
     else:
-        cand, reason = None, ""
         for st in scored:
             t = st["track"] if st["track"] != "demand" else _reach_track(tracks, fits)
-            if tracks[t]["enabled"] and track_eligible(t, fits):
+            if t and usable(t, tracks, fits):
                 cand = t
                 reason = f"{st['from']} → {st['id']} is {st['rate']:.1%} against a {st['floor']:.1%} floor"
                 break
         if cand is None:
             cand = _reach_track(tracks, fits)
-            reason = "no stage has enough data; working on reach"
+            reason = "no stage below its floor can be worked on; working on reach"
+    if cand is None:
+        cand = next((t for t in TRACKS if usable(t, tracks, fits)), None)
+        reason = reason + ("; " if reason else "") + "falling back to the first track that can take work"
+    if cand is None:
+        return {**base, "reason": "no track can take work (all complete, off, ineligible or missing their skills)"}
 
     prev = s.get("focus") or {}
-    since = today().isoformat()
+    since, basis = today().isoformat(), reason
     if prev.get("track") == cand:
         since = prev.get("since", since)
-    elif prev.get("track") and cand != "measurement" and stage != "prelaunch" and prev.get("stage") == stage:
-        pt = tracks.get(prev["track"])
+    elif prev.get("track") in tracks and cand != "measurement" and stage != "prelaunch" and prev.get("stage") == stage:
         age = (today() - _date(prev["since"])).days if prev.get("since") else FOCUS_HOLD_DAYS
-        valid = pt and pt["enabled"] and not pt["complete"] and track_eligible(prev["track"], fits)
         cand_severe = any(st for st in severe if st["track"] == cand)
-        if valid and age < FOCUS_HOLD_DAYS and not cand_severe:
+        if usable(prev["track"], tracks, fits) and age < FOCUS_HOLD_DAYS and not cand_severe:
             cand, since = prev["track"], prev["since"]
-            reason = f"holding focus since {since} (re-decided after {FOCUS_HOLD_DAYS} days or a severe drop); " + prev.get("reason", "")
+            basis = prev.get("basis") or prev.get("reason", "")
+            reason = (f"holding focus since {since} (re-decided after {FOCUS_HOLD_DAYS} days or a severe drop): "
+                      f"{basis}")
 
-    standing = (cand != "discoverability" and tracks["discoverability"]["enabled"]
-                and not tracks["discoverability"]["complete"] and fits["ai_search"]["eligible"])
+    standing = (cand != "discoverability" and usable("discoverability", tracks, fits)
+                and fits["ai_search"]["eligible"])
     if standing:
         secondary = "discoverability"
     else:
-        rest = [st for st in scored if st["track"] not in (cand,) and tracks.get(st["track"], {}).get("enabled")]
-        secondary = rest[0]["track"] if rest else ("measurement" if stage == "prelaunch" and cand != "measurement" else None)
-        if secondary == "demand":
-            secondary = _reach_track(tracks, fits)
-        if secondary == cand:
-            secondary = None
+        secondary = None
+        for st in scored:
+            t = st["track"] if st["track"] != "demand" else _reach_track(tracks, fits)
+            if t and t != cand and usable(t, tracks, fits):
+                secondary = t
+                break
+        if secondary is None and stage == "prelaunch" and cand != "measurement" and usable("measurement", tracks, fits):
+            secondary = "measurement"
     shares = {"focus": SHARES["focus"]}
     if secondary:
         shares["secondary"] = SHARES["standing"]
     shares["explore"] = round(1 - sum(shares.values()), 2)
-
-    not_pursuing = [f"{f['label']} ({f['fit']:.2f}: {f['why'] or 'below the fit floor'})"
-                    for f in fits.values() if not f["eligible"]]
     tr = tracks[cand]
-    return {"track": cand, "rung": tr["current"], "skills": tr["work_on"], "reason": reason, "since": since,
-            "stage": stage, "secondary": secondary, "standing_discoverability": standing, "shares": shares,
-            "not_pursuing": not_pursuing, "alerts": alerts, "tracks": tracks, "fits": fits, "funnel": fun,
-            "worst_stage": worst["id"] if worst else None}
+    return {**base, "track": cand, "rung": tr["current"], "skills": [k for k in tr["work_on"] if skill_installed(k)],
+            "reason": reason, "basis": basis, "since": since, "secondary": secondary,
+            "standing_discoverability": standing, "shares": shares}
 
 
 def persist_focus(s: dict, f: dict) -> None:
     if f.get("track"):
-        s["focus"] = {"track": f["track"], "since": f["since"], "reason": f["reason"], "stage": f["stage"],
+        s["focus"] = {"track": f["track"], "since": f["since"], "basis": f["basis"], "stage": f["stage"],
                       "secondary": f["secondary"]}
 
 
 def focus_line(f: dict) -> str:
     if not f.get("track"):
-        return "Focus: none (paused)"
+        return f"Focus: none ({f.get('reason') or 'paused'})"
     sec = f" Secondary: {f['secondary']}" + (" (standing priority)." if f["standing_discoverability"] else ".") \
         if f.get("secondary") else ""
     return f"Focus: {f['track']} (rung `{f['rung']}`) — {f['reason']}.{sec}"
@@ -750,7 +840,7 @@ def tactics_for(track: str, fits: dict, seed: str, rung_skills: list[str] | None
         if not fits[ch]["eligible"]:
             continue
         for tid, t in c["tactics"].items():
-            if track not in t.get("tracks", c["tracks"]):
+            if track not in t.get("tracks", c["tracks"]) or not skill_installed(t["skill"]):
                 continue
             prior = fits[ch]["fit"]
             a, b = 1 + w * prior, 1 + w * (1 - prior)
@@ -769,12 +859,11 @@ def tactics_for(track: str, fits: dict, seed: str, rung_skills: list[str] | None
 def plan_next(s: dict) -> dict:
     f = compute_focus(s)
     if not f.get("track"):
-        return {"paused": True}
+        return {"focus": focus_line(f), "slots": [], "paused": bool(s.get("paused"))}
     n = int(s["jobs"]["work_session"].get("max_actions", 2))
     slots = next_slots(s, f, n)
     seed = today().isoformat()
-    explore_tracks = [t for t in TRACKS if t not in (f["track"], f["secondary"])
-                      and f["tracks"][t]["enabled"] and track_eligible(t, f["fits"])]
+    explore_tracks = [t for t in TRACKS if t not in (f["track"], f["secondary"]) and usable(t, f["tracks"], f["fits"])]
     out = []
     for i, cat in enumerate(slots):
         if cat == "focus":
@@ -783,9 +872,14 @@ def plan_next(s: dict) -> dict:
             track = f["secondary"]
         else:
             track = explore_tracks[(today().toordinal() + i) % len(explore_tracks)] if explore_tracks else f["track"]
+        if track is None:
+            track = f["track"]
         out.append({"slot": cat, "track": track, "rung": f["tracks"][track]["current"],
                     "tactics": tactics_for(track, f["fits"], f"{seed}-{i}-{track}", f["tracks"][track]["work_on"])[:5]})
-    return {"focus": focus_line(f), "slots": out,
+    missing = sorted({t["skill"] for c in channel_fit_ref()["channels"].values() for t in c["tactics"].values()
+                      if not skill_installed(t["skill"])})
+    return {"focus": focus_line(f), "slots": out, "notes": f["notes"],
+            "skills_not_installed": missing,
             "record_with": f"gtm.py record work_session --mix {','.join(slots)}"}
 
 
@@ -803,8 +897,9 @@ def bet_open(a) -> int:
     if any(b["id"] == a.id for b in rows):
         print(f"bet {a.id} already exists", file=sys.stderr)
         return 1
-    if a.method in ("holdout", "staggered") and not a.control_metric:
-        print(f"--method {a.method} needs --control-metric (the untouched half)", file=sys.stderr)
+    if a.method in ("holdout", "staggered") and (not a.control_metric or a.control_baseline is None):
+        print(f"--method {a.method} needs --control-metric and --control-baseline (the untouched half, now)",
+              file=sys.stderr)
         return 1
     if a.expected == a.baseline:
         print("--expected must differ from --baseline: say what you expect to move", file=sys.stderr)
@@ -829,18 +924,34 @@ def bet_open(a) -> int:
     return 0
 
 
+def ztest(a_n: int, a_x: int, b_n: int, b_x: int) -> dict:
+    """Two-sided two-proportion z-test (control a, variant b)."""
+    from statistics import NormalDist
+    if min(a_n, b_n) <= 0 or not (0 <= a_x <= a_n and 0 <= b_x <= b_n):
+        raise ValueError("A/B counts must be visitors:conversions with 0 <= conversions <= visitors")
+    pa, pb = a_x / a_n, b_x / b_n
+    pool = (a_x + b_x) / (a_n + b_n)
+    se = (pool * (1 - pool) * (1 / a_n + 1 / b_n)) ** 0.5
+    z = (pb - pa) / se if se else 0.0
+    return {"a_rate": pa, "b_rate": pb, "p_value": round(2 * (1 - NormalDist().cdf(abs(z))), 5), "n": min(a_n, b_n)}
+
+
 def judge(b: dict, observed: float, control_observed: float | None, p_value: float | None, n: int | None,
           min_n: int) -> dict:
     expected_effect = b["expected"] - b["baseline"]
     effect = observed - b["baseline"]
-    if b.get("control_metric") and control_observed is not None and b.get("control_baseline") is not None:
+    if b["method"] in ("holdout", "staggered"):
+        if control_observed is None or b.get("control_baseline") is None:
+            raise ValueError(f"a {b['method']} bet is judged against its control: control baseline and value needed")
         effect -= control_observed - b["control_baseline"]
     ratio = effect / expected_effect if expected_effect else 0.0
     note = ""
     if b["method"] == "ab":
         if p_value is None:
-            raise ValueError("an A/B bet needs --p-value from the experiments skill's stats")
-        if p_value >= 0.05:
+            raise ValueError("an A/B bet closes with --a VISITORS:CONVERSIONS --b VISITORS:CONVERSIONS (or --p-value)")
+        if n is not None and n < min_n:
+            status, note = "inconclusive", f"n = {n} < {min_n}: underpowered"
+        elif p_value >= 0.05:
             status, note = "inconclusive", f"p = {p_value:.3f}"
         else:
             status = "won" if ratio > 0 else "lost"
@@ -859,6 +970,14 @@ def judge(b: dict, observed: float, control_observed: float | None, p_value: flo
             "ratio": round(ratio, 3), "note": note}
 
 
+def _measured(metric: str, b: dict, early: bool) -> dict | None:
+    """The value a bet is judged on: dated on or after the check date (or, closing early, after opening)."""
+    if early:
+        m = metric_latest(metric)
+        return m if m and m["date"] > b["opened"] else None
+    return metric_latest(metric, on_or_after=b["check"])
+
+
 def bet_close(a) -> int:
     rows = bets()
     b = next((x for x in rows if x["id"] == a.id), None)
@@ -868,36 +987,58 @@ def bet_close(a) -> int:
     if b["status"] != "open":
         print(f"bet {a.id} is already {b['status']}", file=sys.stderr)
         return 1
-    if _date(b["check"]) > today() and not a.force:
+    early = _date(b["check"]) > today()
+    if early and not a.force:
         print(f"bet {a.id} checks on {b['check']}; pass --force to close early", file=sys.stderr)
         return 1
-    observed = a.observed
+    supplied = a.observed is not None or a.control_observed is not None or a.a or a.b
+    if supplied and not a.source:
+        print("values passed by hand need --source (where they came from); they are marked as agent-supplied",
+              file=sys.stderr)
+        return 1
+    p_value, n = a.p_value, a.n
+    observed, ctrl, observed_by = a.observed, a.control_observed, ("agent: " + a.source) if supplied else "metrics store"
+    if b["method"] == "ab" and (a.a or a.b):
+        try:
+            t = ztest(*_arm(a.a), *_arm(a.b))
+        except ValueError as e:
+            print(str(e), file=sys.stderr)
+            return 1
+        observed, p_value, n = t["b_rate"], t["p_value"], t["n"]
+    when = f"after {b['opened']}" if early else f"on or after {b['check']}"
     if observed is None:
-        m = metric_latest(b["metric"], on_or_after=b["check"]) or metric_latest(b["metric"], on_or_after=b["opened"])
+        m = _measured(b["metric"], b, early)
         if not m:
-            print(f"no `{b['metric']}` value since {b['opened']}; pass --observed or record the metric", file=sys.stderr)
+            print(f"no `{b['metric']}` value {when}; measure it first (the bet stays open and due)", file=sys.stderr)
             return 1
         observed = float(m["value"])
-    ctrl = a.control_observed
-    if ctrl is None and b.get("control_metric"):
-        m = metric_latest(b["control_metric"], on_or_after=b["opened"])
-        ctrl = float(m["value"]) if m else None
-        if ctrl is None:
-            print(f"no `{b['control_metric']}` value; pass --control-observed", file=sys.stderr)
+    if ctrl is None and b["method"] in ("holdout", "staggered"):
+        m = _measured(b["control_metric"], b, early)
+        if not m:
+            print(f"no `{b['control_metric']}` value {when}; measure the control too", file=sys.stderr)
             return 1
+        ctrl = float(m["value"])
     try:
-        res = judge(b, observed, ctrl, a.p_value, a.n, a.min_n)
+        res = judge(b, observed, ctrl, p_value, n, a.min_n)
     except ValueError as e:
         print(str(e), file=sys.stderr)
         return 1
-    b.update({"status": res["status"], "result": {**res, "observed": observed, "control_observed": ctrl},
-              "closed": today().isoformat(), "decision": a.decision or None})
+    b.update({"status": res["status"], "closed": today().isoformat(), "decision": a.decision or None,
+              "result": {**res, "observed": observed, "control_observed": ctrl, "observed_by": observed_by,
+                         "closed_early": early}})
     if a.cost_per_customer:
         b["cost_per_customer"] = a.cost_per_customer
     save_bets(rows)
     outbox("marketing_bet", {**b, "change": "closed"})
     print(json.dumps(b, indent=2))
     return 0
+
+
+def _arm(x: str | None) -> tuple[int, int]:
+    if not x or ":" not in x:
+        raise ValueError("A/B arms are VISITORS:CONVERSIONS, e.g. --a 1000:50 --b 1000:68")
+    n, _, c = x.partition(":")
+    return int(n), int(c)
 
 
 def learning_candidates() -> list[dict]:
@@ -957,6 +1098,8 @@ def due(s: dict, fits: dict | None = None) -> tuple[list[dict], list[dict], list
         for k in ("max_actions", "cooldown_days", "dedupe_key", "acts_when", "self_check", "stop"):
             if j.get(k) is not None:
                 entry[k] = j[k]
+        if (s.get("cursors") or {}).get(name):
+            entry["cursor"] = s["cursors"][name]
         if unmet:
             skipped.append({**entry, "skipped": "; ".join(unmet)})
         else:
@@ -966,7 +1109,7 @@ def due(s: dict, fits: dict | None = None) -> tuple[list[dict], list[dict], list
     wr = root / "watch" / "report.md"
     if wr.exists():
         txt = wr.read_text()
-        seen = s["last_run"].get("comparison_refresh")
+        seen = (s.get("events") or {}).get("comparison_refresh") or s["last_run"].get("comparison_refresh")
         stamp = txt.splitlines()[0].rsplit("— ", 1)[-1] if txt else ""
         if "## Changed:" in txt and stamp and stamp != seen:
             jobs.append({"job": "comparison_refresh", "why": f"watched pages changed ({stamp})",
@@ -1001,7 +1144,10 @@ def due(s: dict, fits: dict | None = None) -> tuple[list[dict], list[dict], list
 # --------------------------------------------------------------------------- commands
 def cmd_where(a) -> int:
     st = ms.resolve()
-    print(json.dumps({**st.as_dict(), "initialized": (st.root / "gtm.json").exists()}, indent=2))
+    out = {**st.as_dict(), "initialized": (st.root / "gtm.json").exists()}
+    if st.backend == "git" and not (st.root / ".git").exists():
+        out["next"] = "gtm.py sync pull"
+    print(json.dumps(out, indent=2))
     return 0
 
 
@@ -1009,23 +1155,35 @@ def cmd_init(a) -> int:
     exists = STATE().exists()
     if exists and not a.force:
         s = load_state()
-        changed = False
-        for k, v in (("motion", a.motion), ("acv_usd", a.acv)):
-            if v is not None and s["profile"].get(k) != v:
-                s["profile"][k] = v
-                changed = True
+        applied = []
+        for key, val in (("stage", a.stage), ("budget_usd_month", a.budget), ("per_run_cap_usd", a.per_run_cap),
+                         ("site_url", a.site_url)):
+            if val is not None and s.get(key) != val:
+                s[key] = val
+                applied.append(key)
+        for key, val in (("motion", a.motion), ("acv_usd", a.acv)):
+            if val is not None and s["profile"].get(key) != val:
+                s["profile"][key] = val
+                s["profile"]["confirmed"] = False
+                applied.append(key)
         save_state(s)
-        print(f"upgraded {STATE()} to schema {SCHEMA}; settings kept" + (" (profile updated)" if changed else ""))
+        print(f"upgraded {STATE()} to schema {SCHEMA}; kept existing settings"
+              + (f"; applied {', '.join(applied)}" if applied else ""))
         return 0
     old = json.loads(STATE().read_text()) if exists else {}
-    s = default_state(a.stage)
+    if old.get("paused"):
+        print("refusing to reset a paused program: `gtm.py resume` first (a human's call)", file=sys.stderr)
+        return 1
+    s = default_state(a.stage or old.get("stage", "launched"))
     for k in ("goal", "site_url", "key_paths", "repo_default_branch", "notify", "accepted_problems",
-              "known_issues", "ladder", "last_run", "keys", "profile", "connections", "fit", "tracks", "floors"):
+              "known_issues", "ladder", "last_run", "events", "cursors", "keys", "failures", "profile",
+              "connections", "fit", "tracks", "floors", "focus", "work_mix", "jobs", "budget_usd_month",
+              "per_run_cap_usd", "measurement", "brand_terms", "sender", "authority"):
         if k in old:
             s[k] = old[k]
-    s.update({"stage": a.stage, "budget_usd_month": a.budget, "per_run_cap_usd": a.per_run_cap})
-    if a.site_url:
-        s["site_url"] = a.site_url
+    for key, val in (("budget_usd_month", a.budget), ("per_run_cap_usd", a.per_run_cap), ("site_url", a.site_url)):
+        if val is not None:
+            s[key] = val
     if a.motion:
         s["profile"]["motion"] = a.motion
     if a.acv is not None:
@@ -1036,7 +1194,19 @@ def cmd_init(a) -> int:
                          ("launch_scan", "strategy_review", "panel_review", "comparison_reverify", "fit_review")}
     upgrade(s)
     save_state(s)
-    print(f"wrote {STATE()} (stage={a.stage}, motion={s['profile']['motion']}, budget=${a.budget}/month)")
+    print(f"wrote {STATE()} (stage={s['stage']}, motion={s['profile']['motion']}, "
+          f"budget=${s['budget_usd_month']}/month)")
+    return 0
+
+
+def cmd_stage(a) -> int:
+    s = load_state()
+    before = s.get("stage")
+    s["stage"] = a.stage
+    if before != a.stage:
+        s["focus"] = None  # a new stage re-decides the focus
+    save_state(s)
+    print(f"stage: {before} → {a.stage}")
     return 0
 
 
@@ -1111,61 +1281,79 @@ def cmd_budget(a) -> int:
     return 0
 
 
-def in_cooldown(s: dict, job: str, key: str) -> str | None:
-    days = s["jobs"].get(job, {}).get("cooldown_days")
+def in_cooldown(s: dict, job: str, key: str, days: int | None = None) -> str | None:
+    days = days if days is not None else s["jobs"].get(job, {}).get("cooldown_days")
     last = (s.get("keys") or {}).get(job, {}).get(key)
     if days and last and (today() - _date(last)).days < days:
         return f"{key} was handled on {last}; {job} cools down for {days} days"
     return None
 
 
+def stopped(s: dict, job: str, key: str) -> str | None:
+    n = (s.get("failures") or {}).get(job, {}).get(key, 0)
+    stop_after = int(s["jobs"].get(job, {}).get("stop_after_failures", 2))
+    if n >= stop_after:
+        return f"{job} failed {n} times on {key}; a human must clear it (`gtm.py record {job} --key {key}` after fixing)"
+    return None
+
+
 def cmd_may(a) -> int:
+    """The gate before acting on a key: kill switch, cooldown, repeated failures. Exit 3 means don't."""
     s = load_state()
     if s.get("paused"):
         print("paused")
         return 3
-    why = in_cooldown(s, a.job, a.key)
+    why = in_cooldown(s, a.job, a.key) or stopped(s, a.job, a.key)
     print(why or "ok")
     return 3 if why else 0
 
 
 def cmd_record(a) -> int:
+    """Record what happened. Never refuses a real event (money spent is money spent); `may` is the gate."""
     s = load_state()
-    if a.key and not a.failed:
-        why = in_cooldown(s, a.job, a.key)
-        if why and not a.force:
-            print(f"refused: {why}", file=sys.stderr)
-            return 3
+    keys = a.key or []
     if a.failed:
-        if not a.key:
+        if not keys:
             print("--failed needs --key", file=sys.stderr)
             return 1
-        fails = s.setdefault("failures", {}).setdefault(a.job, {})
-        fails[a.key] = fails.get(a.key, 0) + 1
+        for k in keys:
+            fails = s.setdefault("failures", {}).setdefault(a.job, {})
+            fails[k] = fails.get(k, 0) + 1
+            print(f"recorded failure {fails[k]} for {a.job} on {k}")
         save_state(s)
-        print(f"recorded failure {fails[a.key]} for {a.job} on {a.key}")
         return 0
+    if a.mix and any(c not in ("focus", "standing", "explore") for c in a.mix.split(",")):
+        print("--mix takes focus, standing or explore", file=sys.stderr)
+        return 1
     cost = a.cost or 0.0
     imported = []
     if a.from_run:
         rows = read_jsonl(Path(a.from_run) / "answers.jsonl")
         cost = round(sum(r.get("cost_usd") or 0 for r in rows), 4)
         imported = import_audit(Path(a.from_run))
-    s["last_run"][a.job] = a.event or today().isoformat()
-    if a.key:
-        s.setdefault("keys", {}).setdefault(a.job, {})[a.key] = today().isoformat()
-        s.get("failures", {}).get(a.job, {}).pop(a.key, None)
+    if a.event:
+        s.setdefault("events", {})[a.job] = a.event
+    if a.job in s["jobs"] or not a.event:
+        s["last_run"][a.job] = today().isoformat()
+    if a.cursor:
+        s.setdefault("cursors", {})[a.job] = a.cursor
+    warnings = []
+    for k in keys:
+        why = in_cooldown(s, a.job, k)
+        if why:
+            warnings.append(f"warning: {why} (recorded anyway; check `gtm.py may` before acting)")
+        s.setdefault("keys", {}).setdefault(a.job, {})[k] = today().isoformat()
+        s.get("failures", {}).get(a.job, {}).pop(k, None)
     if a.mix:
         for cat in a.mix.split(","):
-            if cat not in ("focus", "standing", "explore"):
-                print(f"--mix takes focus, standing or explore, not {cat!r}", file=sys.stderr)
-                return 1
             s["work_mix"][cat] = s["work_mix"].get(cat, 0) + 1
     save_state(s)
     if cost or a.note:
         append_jsonl(R() / "spend.jsonl", {"date": today().isoformat(), "job": a.job, "usd": cost, "note": a.note})
-    print(f"recorded {a.job} on {s['last_run'][a.job]}" + (f", ${cost:.4f}" if cost else "")
-          + (f", {len(imported)} audit metrics" if imported else ""))
+    for w in warnings:
+        print(w, file=sys.stderr)
+    print(f"recorded {a.job}" + (f" ({a.event})" if a.event else "") + (f", ${cost:.4f}" if cost else "")
+          + (f", {len(keys)} keys" if keys else "") + (f", {len(imported)} audit metrics" if imported else ""))
     return 0
 
 
@@ -1314,6 +1502,8 @@ def cmd_digest(a) -> int:
          f"**{focus_line(f)}**", "",
          f"**Stage** {s.get('stage')} · **motion** {s['profile'].get('motion')} · "
          f"**spend** ${b['spent_month']:.2f} / ${b['cap']:.0f} this month", ""]
+    if s.get("paused"):
+        L.append(f"> ⏸ PAUSED: {s.get('paused_reason') or 'kill switch on'}. Nothing runs until `gtm.py resume`.")
     for al in f["alerts"] + alerts:
         L.append(f"> ⚠ {al}")
     L += ["", "| track | status |", "|---|---|"]
@@ -1343,10 +1533,12 @@ def cmd_digest(a) -> int:
         L.append("**Proposed learnings** (accept with `gtm.py learnings --accept ID`): "
                  + "; ".join(f"{c['id']} {c['tactic']} {c['status']} ({c['evidence']})" for c in cands))
     month = today().strftime("%Y-%m")
+    fit_reported = False
     if s.get("last_fit_report") != month and f["not_pursuing"]:
         L.append("**Not pursuing this month** (override in gtm.json fit.overrides): " + "; ".join(f["not_pursuing"]))
-        s["last_fit_report"] = month
-        save_state(s)
+        fit_reported = True
+    for n in f.get("notes", []):
+        L.append(f"> note: {n}")
     tp = root / "outreach" / "targets.json"
     if tp.exists():
         counts: dict = {}
@@ -1362,6 +1554,9 @@ def cmd_digest(a) -> int:
         print(f"{out} exists (agent may have filled it); pass --force to regenerate")
         return 1
     out.write_text("\n".join(L) + "\n")
+    if fit_reported:
+        s["last_fit_report"] = month
+        save_state(s)
     print(out)
     return 0
 
@@ -1386,6 +1581,9 @@ def cmd_sync(a) -> int:
     return 0
 
 
+HISTORY = ("gtm.json", "experiments.jsonl", "spend.jsonl", "metrics")
+
+
 def cmd_migrate(a) -> int:
     root = ms.repo_root()
     src = root / ms.LEGACY_DIR
@@ -1396,31 +1594,40 @@ def cmd_migrate(a) -> int:
         print("already in the repo backend", file=sys.stderr)
         return 1
     slug = ms.repo_slug(root)
-    target = ms._from_spec(a.to, slug, root, "migrate")
+    spec = ms.normalize_spec(a.to, root)
+    target = ms._from_spec(spec, slug, root, "migrate")
     if target.backend == "git":
         try:
             ms.pull(target)
         except RuntimeError as e:
             print(f"could not fetch the state repo: {e}", file=sys.stderr)
             return 1
-    if (target.root / "gtm.json").exists() and not a.force:
-        print(f"{target.root} already has gtm.json; pass --force to overwrite", file=sys.stderr)
+    clash = [h for h in HISTORY if (target.root / h).exists()]
+    if clash:
+        print(f"{target.root} already holds history ({', '.join(clash)}); migrate only into an empty store",
+              file=sys.stderr)
         return 1
     target.root.mkdir(parents=True, exist_ok=True)
     for item in src.iterdir():
+        if item.name == "MOVED":
+            continue
         dest = target.root / item.name
         if item.is_dir():
             shutil.copytree(item, dest, dirs_exist_ok=True)
         else:
             shutil.copy2(item, dest)
-    ms.register(slug, a.to)
-    _root_for.cache_clear()
-    s = upgrade(json.loads(STATE().read_text()))
+    st_path = target.root / "gtm.json"
+    s = upgrade(json.loads(st_path.read_text()))
     s.pop("state_commit", None)
-    save_state(s)
+    atomic_write(st_path, json.dumps(s, indent=2) + "\n")
+    ms.register(slug, spec)
+    _root_for.cache_clear()
+    # other hosts that still find .marketing/ must not silently use the stale copy
+    (src / "MOVED").write_text(f"moved to {spec} on {today().isoformat()}\n")
     pushed = ms.push(target, "marketing: migrate state out of the product repo") if target.backend == "git" else ""
     print(json.dumps({"migrated_to": str(target.root), "backend": target.backend, "pushed": pushed,
                       "next": ["open a PR in the product repo that deletes .marketing/ (history rewrite is the team's call)",
+                               "on every other host that runs the operator: `gtm.py store use " + spec + "`",
                                "flush posthog-outbox.jsonl once PostHog is connected (measurement skill)"]}, indent=2))
     return 0
 
@@ -1430,13 +1637,16 @@ def main() -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("where")
     p = sub.add_parser("init")
-    p.add_argument("--stage", choices=["prelaunch", "launched"], default="launched")
+    p.add_argument("--stage", choices=["prelaunch", "launched"])
     p.add_argument("--motion", choices=funnel_ref()["templates"].keys())
     p.add_argument("--acv", type=float, help="annual contract value in USD")
-    p.add_argument("--budget", type=float, default=20.0)
-    p.add_argument("--per-run-cap", type=float, default=5.0)
-    p.add_argument("--site-url", default="")
-    p.add_argument("--force", action="store_true", help="reset config (last_run, keys and profile are kept)")
+    p.add_argument("--budget", type=float, help="monthly treg budget in USD (default 20 on a new store)")
+    p.add_argument("--per-run-cap", type=float)
+    p.add_argument("--site-url")
+    p.add_argument("--force", action="store_true",
+                   help="reset defaults; history, profile, budget, jobs and the kill switch are kept")
+    p = sub.add_parser("stage", help="move between prelaunch and launched (e.g. on launch day)")
+    p.add_argument("stage", choices=["prelaunch", "launched"])
     for name in ("tick", "status", "ladder", "focus", "fit", "tracks", "next", "resume"):
         sub.add_parser(name)
     p = sub.add_parser("profile", help="show or set the GTM profile; changes unconfirm it")
@@ -1458,10 +1668,10 @@ def main() -> int:
     p.add_argument("--from-run")
     p.add_argument("--note", default="")
     p.add_argument("--event", help="event stamp for event-triggered jobs (from tick's `event`)")
-    p.add_argument("--key", help="dedupe key acted on (enforces the job's cooldown)")
+    p.add_argument("--key", action="append", help="what the job acted on (a domain, page, account); repeatable")
     p.add_argument("--failed", action="store_true", help="the action on --key failed")
     p.add_argument("--mix", help="work_session slots used, e.g. focus,standing")
-    p.add_argument("--force", action="store_true", help="record despite a cooldown")
+    p.add_argument("--cursor", help="where a scan got to (e.g. the HEAD sha launch_scan read up to)")
     p = sub.add_parser("may")
     p.add_argument("job")
     p.add_argument("key")
@@ -1495,6 +1705,9 @@ def main() -> int:
     p.add_argument("--observed", type=float)
     p.add_argument("--control-observed", type=float)
     p.add_argument("--p-value", type=float)
+    p.add_argument("--a", help="A/B control arm as VISITORS:CONVERSIONS")
+    p.add_argument("--b", help="A/B variant arm as VISITORS:CONVERSIONS")
+    p.add_argument("--source", help="where hand-passed values came from (required with --observed, --a/--b)")
     p.add_argument("--n", type=int, help="sample size behind the observed value")
     p.add_argument("--min-n", type=int, default=100)
     p.add_argument("--cost-per-customer", type=float)
@@ -1513,16 +1726,24 @@ def main() -> int:
     p.add_argument("direction", choices=["pull", "push"])
     p.add_argument("--message")
     p = sub.add_parser("migrate")
-    p.add_argument("--to", required=True, help="a directory or git URL for the new store")
-    p.add_argument("--force", action="store_true")
+    p.add_argument("--to", required=True, help="a directory or git URL for the new, empty store")
     a = ap.parse_args()
     if a.cmd == "bet" and a.id_pos and not a.id:
         a.id = a.id_pos
-    return {"where": cmd_where, "init": cmd_init, "tick": cmd_tick, "status": cmd_status, "ladder": cmd_ladder,
-            "focus": cmd_focus, "fit": cmd_fit, "tracks": cmd_tracks, "next": cmd_next, "budget": cmd_budget,
-            "record": cmd_record, "may": cmd_may, "metric": cmd_metric, "bet": cmd_bet, "learnings": cmd_learnings,
-            "pause": cmd_pause, "resume": cmd_resume, "profile": cmd_profile, "digest": cmd_digest, "store": cmd_store, "sync": cmd_sync,
-            "migrate": cmd_migrate}[a.cmd](a)
+    handler = {"where": cmd_where, "init": cmd_init, "tick": cmd_tick, "status": cmd_status, "ladder": cmd_ladder,
+               "focus": cmd_focus, "fit": cmd_fit, "tracks": cmd_tracks, "next": cmd_next, "budget": cmd_budget,
+               "record": cmd_record, "may": cmd_may, "metric": cmd_metric, "bet": cmd_bet,
+               "learnings": cmd_learnings, "pause": cmd_pause, "resume": cmd_resume, "profile": cmd_profile,
+               "stage": cmd_stage, "digest": cmd_digest, "store": cmd_store, "sync": cmd_sync,
+               "migrate": cmd_migrate}[a.cmd]
+    try:
+        if a.cmd in ("where", "store"):
+            return handler(a)
+        with locked():  # one writer per store: parallel subagents each call gtm.py
+            return handler(a)
+    except ms.StoreError as e:
+        print(f"gtm: {e}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

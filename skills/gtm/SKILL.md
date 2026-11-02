@@ -11,7 +11,13 @@ narrow scope), and **report** (record, digest, ask the human only for what needs
 
 `scripts/gtm.py` holds the facts: cadences, budget, fit, focus, cooldowns, metrics and experiment
 results. Always ask it rather than reasoning about dates, money or priorities yourself. That keeps
-runs consistent across hosts, models and weeks. Sibling skills live next to this one (`../<skill>/`).
+runs consistent across hosts, models and weeks.
+
+**Where to run things.** Run every command with the working directory at the **product repo
+root**: the state store is chosen from that repo. Paths like `scripts/gtm.py` and
+`../<skill>/scripts/…` are relative to this skill's folder, so expand them to absolute paths
+(e.g. `python3 /path/to/plugin/skills/gtm/scripts/gtm.py tick`); never `cd` into the plugin to
+run them. `gtm.py` refuses to run with the plugin's own repo as the product.
 
 ## The state store
 
@@ -45,12 +51,17 @@ repo or in PostHog event properties.
 
 1. `cd` to the product repo root and `git pull --ff-only` on the default branch. Stop and report if it
    doesn't fast-forward or the tree is dirty.
-2. Git backend: `gtm.py sync pull`. If it fails, stop and report; never merge state by hand.
-3. Check tools: `python3`, `treg --version` and `treg balance`, `gh auth status` if PRs are expected.
+2. `gtm.py where`. If `backend` is `git`: `gtm.py sync pull`; if it fails, stop and report; never
+   merge state by hand.
+3. **Apply replies.** Read the human's replies to the last digest (chat or issue). "pause" → `gtm.py
+   pause --reason "<their words>"`. Approvals → apply exactly what was approved (e.g. "approve 2"
+   approves item 2 of "Needs you"), nothing more, and log each in plan.md. Unclear replies: ask,
+   don't guess.
+4. Check tools: `python3`, `treg --version` and `treg balance`, `gh auth status` if PRs are expected.
    If treg is missing or empty, run only free jobs and alert.
-4. `gtm.py tick` → `focus`, `due`, `deferred`, `skipped`, `alerts`, `budget`, `tracks`. If it says
+5. `gtm.py tick` → `focus`, `due`, `deferred`, `skipped`, `alerts`, `budget`, `tracks`. If it says
    `paused`, do nothing but report the pause.
-5. Read `<state>/plan.md`, `<state>/product-context.md` and the last digest.
+6. Read `<state>/plan.md`, `<state>/product-context.md` and the last digest.
 
 **End:**
 
@@ -58,8 +69,11 @@ repo or in PostHog event properties.
    finishes. Use `--key` for whatever the job acted on (a domain, a page, an account) so cooldowns
    hold. If an action failed, `record <job> --failed --key <key>`; two failures on a key escalate.
 2. Update `plan.md`: focus, bets opened or closed, backlog, a log line.
-3. If anything ran or alerted: `gtm.py digest`, then fill its top half (see Digest).
-4. Repo backend: commit `.marketing/` only. Git backend: `gtm.py sync push`. Then notify.
+3. If anything ran or alerted: `gtm.py digest`, then fill its top half (see Digest). If today's
+   digest already exists (e.g. a weekly run after the tick), add a dated section to it; never
+   `--force` over a digest that has been filled in.
+4. Git backend: `gtm.py sync push`. Repo backend: commit `.marketing/` only, to a `marketing/state`
+   branch with one rolling PR (never to a protected default branch). Then notify.
 
 ## init
 
@@ -72,27 +86,32 @@ Ask the human only for what the repo can't tell you. Infer the rest and confirm.
 3. `gtm.py init --stage <stage> --motion <motion> --acv <usd> --budget 20 --site-url https://…`.
    Set `goal` (one measurable line with a date) and `key_paths` in `<state>/gtm.json`. Ask how to
    notify (see Digest).
-4. **Foundation**, each confirmed with the human once:
-   - `../product-context`: `<state>/product-context.md` and the GTM profile in `gtm.json`. Fit uses
-     the profile only once `profile.confirmed` is true; until then it uses the motion's defaults.
+4. **Foundation**, each confirmed with the human once, in this order:
    - claims ledger `<state>/claims.md` (`../one-pager/references/claims-ledger.md`)
+   - `../product-context`: `<state>/product-context.md` and the GTM profile (`gtm.py profile`). Fit
+     uses the profile only once it is confirmed; until then it uses the motion's defaults.
    - entity card `<state>/entity.md` (`../entity-presence`)
    - prompt panel `<state>/prompt-panel.json` (`../ai-visibility-audit/references/panel-design.md`)
 5. **Fit.** `gtm.py fit`. Read the ineligible channels back to the human with their reasons; record
    any disagreement as `fit.overrides` in gtm.json (a number, `"include"` or `"exclude"`).
-6. **Baseline** (`launched`): run what `tick` lists as due (access check, audit, entity probe, watch).
-   In `prelaunch`, run the entity probe only.
+6. **Baseline**: run only the due jobs with `kind: sensor` from `tick` (access check, audit, entity
+   probe, watch in `launched`; entity probe and watch in `prelaunch`). Leave `work_session` to the
+   first tick, after the plan exists.
 7. **Diagnose**: `gtm.py focus` and `gtm.py tracks`. Record name collisions or wrong facts from the
    probe as `known_issues`, and deliberate access blocks (staging hosts) as `accepted_problems`,
-   quoting the checker's problem string exactly. Set floors the funnel can't default (e.g.
-   `tracks.demand.rungs.visited.value`) from the goal, and say so in the digest.
+   quoting the checker's problem string exactly. Propose floors the funnel can't default (e.g.
+   `tracks.demand.rungs.visited.value`) from the goal, and set them once the human agrees.
 8. **Write `<state>/plan.md`** from `references/plan-template.md`: goal, focus and why, the first
    bets, backlog, schedule. Prelaunch plans aim at launch day: entity profiles ready, 3-5 pages
    staged on a branch, comparison dossiers, outreach targets, and the robots and noindex changes as a
    PR to merge at launch.
-9. **Install the heartbeat** on the host (`references/hosts.md`): one daily entry running `gtm tick`.
-   Confirm with the human before creating it.
+9. **Install the heartbeat** on the host (`references/hosts.md`): one daily entry running this skill
+   in tick mode. Confirm with the human before creating it. With `notify.channel: "github"`, create
+   and pin the "GTM digest" issue now if it doesn't exist.
 10. Digest and notify. The first digest explains the focus, the fit exclusions and the 30-day plan.
+
+**Launch day.** When a prelaunch product goes live: merge the prepared robots/noindex PR, run
+`gtm.py stage launched`, and run a tick. Measurement and the paid audit start from there.
 
 ## tick: run what's due
 
@@ -100,7 +119,8 @@ Run jobs in the order `tick` returns (free first). Each job carries its contract
 `self_check`, `stop`, and for some `max_actions`, `cooldown_days` and `dedupe_key`. Most runs of a
 good job check and find nothing to do; record them anyway. Before any paid job:
 `gtm.py budget --need <usd>`; exit 2 means skip it and say so in the digest. Pass spend ceilings into
-every script (`--max-usd` = the smaller of the job's estimate × 1.5 and the remaining budget).
+every script (`--max-usd` = the smallest of the job's estimate × 1.5, `per_run_cap_usd`, and the
+remaining budget).
 Skipped jobs (missing connection, ineligible channel, track off) go in the digest, not into retries.
 
 | job | recipe |
@@ -110,9 +130,9 @@ Skipped jobs (missing connection, ineligible channel, track off) go in the diges
 | `audit` | `python3 ../ai-visibility-audit/scripts/run_panel.py --max-usd <cap>` → `score_panel.py <run> --previous <last run>` → `record audit --from-run <run>`, which also stores the scores as metrics (`ai:mention`, `ai:mention:<bucket>`, `ai:citation…`, `ai:share_of_voice…`) so bets can close on them. |
 | `outreach_refresh` | `python3 ../citation-outreach/scripts/outreach_targets.py <latest run>`. For each target, `gtm.py may outreach_refresh <domain>` first; triage up to 5 and draft up to 3 (citation-outreach steps 2-4) → `record outreach_refresh --key <domain>` per draft. |
 | `comparison_refresh` | comparison-pages step 5 on the changed pages → PR if a grid fact moved → `record comparison_refresh --event <event>` |
-| `bet_close` | `gtm.py bet close <id>` (the tick entry's `command`). If it needs a value the store lacks, measure it first or pass `--observed`. Then write the result in plan.md. |
+| `bet_close` | `gtm.py bet close <id>` (the tick entry's `command`). It judges on metrics dated on or after the check date, the control's too. If one is missing, measure it (an audit, a metrics pull) and retry next tick; the bet stays due. Pass a value by hand only with `--source` naming where it came from. Then write the result in plan.md. |
 | `work_session` | see below |
-| `launch_scan` | `git log <last launch_scan>..HEAD --oneline` on the default branch, plus new tags and the changelog. Run `launch` for each user-visible change → `record launch_scan --key <sha or tag>`. Nothing user-visible: record and stop. |
+| `launch_scan` | `git log <cursor>..HEAD --oneline` on the default branch, where `cursor` is the tick entry's `cursor` (or `git log --since=<last run date>` when it has none), plus new tags and the changelog. Run `launch` for each user-visible change. Then `record launch_scan --cursor <HEAD sha>`, even when nothing was user-visible. |
 | `strategy_review` | review closed bets and `gtm.py learnings`; propose accepted learnings for product-context.md; re-rank the backlog; check floors against the product's own baseline; propose cadence, budget or floor changes to the human. Never raise the budget yourself. |
 | `fit_review` | re-read the GTM profile; if `../customer-research` is installed, re-measure attention; `gtm.py fit`; propose profile or override changes. |
 | `entity_probe` | entity-presence step 2; update `known_issues` |
@@ -129,6 +149,9 @@ well-fitting channels can't be the focus. Discoverability is a standing priority
 when it isn't the focus. A focus holds for 30 days unless a stage drops below half its floor.
 
 Never override the focus by feel. If you think it's wrong, say so in the digest with the numbers.
+`focus.notes` and the digest say when a track can't be worked because its skill isn't installed.
+Without the measurement skill the funnel isn't gated on measurement; a team can record
+`tracking_ok`, `source_capture_rate` and `stage:<id>` counts by hand (`gtm.py metric add`) instead.
 
 ## work_session: the part that moves numbers
 
@@ -143,12 +166,15 @@ At most `max_actions` (2) per session. Finished, reviewable work beats half-done
 3. **Open the bet before acting**: `gtm.py bet open --id <date-slug> --track … --channel … --tactic …
    --hypothesis "…" --metric <metric it should move> --baseline <now> --expected <target> --method
    <ab|holdout|staggered|before_after> --check <date>`. Prefer the strongest method the traffic
-   allows: an A/B test with flags when there is enough traffic, a holdout (change half the pages or
-   prompt topics, keep half as `--control-metric`) when the unit can be split, staggered rollout for
-   many similar units, before/after only as a last resort. Check dates: 2-4 weeks for AI answers and
+   allows: an A/B test (closed with `--a VISITORS:CONVERSIONS --b …` from the experiment's results)
+   when there is enough traffic; a holdout (change half the pages or prompt topics, keep half as
+   `--control-metric … --control-baseline <now>`) when the unit can be split; staggered rollout for
+   many similar units; before/after only as a last resort. Check dates: 2-4 weeks for AI answers and
    pages, longer for SEO, the sales cycle's leading indicator for long cycles.
 4. Do it through the skill, with its gates intact and `../writing` for any copy. The output is a PR
-   (pages, site changes) or drafts (outreach, profiles), or both.
+   (pages, site changes) or drafts (outreach, profiles), or both. `next` only offers tactics whose
+   skill is installed; if the focus itself has no installed skill (`focus.skills` is empty), don't
+   improvise: put the rung and what it needs in the digest's "Needs you".
 5. `gtm.py record work_session --mix <slots used, e.g. focus,standing>`.
 6. Bets close on their check date (`bet_close` in tick). `gtm.py learnings` lists results strong
    enough to become learnings; propose them in the digest and add them to product-context.md only
@@ -172,7 +198,8 @@ gets a look. `launch_scan` runs this daily; run it by hand with `launch <PR, tag
 7. **Entity and profiles**: if the one-liner, category or platforms changed, update `entity.md` and
    prepare paste-ready profile updates.
 8. **Feeds**: `llms.txt`, the JSON feed and the sitemap mention the feature, via a PR.
-9. **Tracking**: 1-3 panel prompts for the job the feature does, and a bet with a check date.
+9. **Tracking**: propose 1-3 panel prompts for the job the feature does in the digest (panel
+   changes need a yes), and open a bet with a check date.
 10. **Announcement draft**: a changelog entry and one short post from the claims rows, through
     `../writing`, saved under `<state>/launches/<date>-<slug>.md` for a human to publish.
 11. `record launch_scan --key <sha or tag>`, and list what was prepared under the digest's "Needs you".

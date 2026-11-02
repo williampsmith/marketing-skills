@@ -2,7 +2,7 @@
 
 How to point this plugin at a product and leave it running unattended. There are two paths:
 **Claude Code** (a cloud routine, or a server you run) and **Hermes Agent** (a long-running agent
-on your own server). Both end in the same state: one daily `gtm tick` against the product repo,
+on your own server). Both end in the same state: one daily run of the `gtm` skill in tick mode against the product repo,
 with work arriving as PRs and drafts, and a digest telling a human what needs them.
 
 This is the high-level runbook. Mechanics for each host are in
@@ -15,7 +15,7 @@ This is the high-level runbook. Mechanics for each host are in
 | Which repo the agent works in | The product repo that holds the website source (or the site repo, if separate). It must be able to read the code to build the claims ledger. |
 | Where the state lives | Outside the product repo. A persistent host (Hermes VPS, your own server) uses the default `dir` store on that machine. An ephemeral host (Claude Code cloud routine) needs a private state repo, e.g. `<product>-marketing`. |
 | Who owns it | One named human who reviews PRs and sends drafts. The digest goes to them. |
-| Budget | $20/month of treg balance to start (`gtm init --budget 20`). Steady state is about $8-12. |
+| Budget | $20/month of treg balance to start (`gtm.py init --budget 20`). Steady state is about $8-12. |
 | Stage | `prelaunch` if the site is deliberately hidden from search; otherwise `launched`. |
 | Where digests go | The agent's chat (Hermes gateway) or a pinned GitHub issue. A copy is always written to the state store. |
 
@@ -59,7 +59,7 @@ go through PRs, and its own bookkeeping goes to the state store.
 2. Clone the product repo; install the plugin as in A1. The default `dir` store
    (`~/.marketing/<owner>-<repo>/`) keeps state on the server; include it in the server's backups.
 3. Run `init` interactively over SSH (step A1.3, without the state repo).
-4. Add one cron line that runs Claude Code headless in the repo once a day, with the `gtm tick`
+4. Add one cron line that runs Claude Code headless in the repo once a day, with the gtm tick-mode
    prompt, and logs to a file. Use a non-interactive permission mode that allows only what the
    skills need (git, gh, python3, treg). Don't grant blanket permissions.
 
@@ -88,10 +88,10 @@ go through PRs, and its own bookkeeping goes to the state store.
 | day | what to check |
 |---|---|
 | 0 | `gtm.py where` shows the store outside the repo; `init` wrote gtm.json, product-context.md, claims, entity card, panel and plan.md there; the heartbeat exists |
-| 1 | First tick ran: access check and baseline audit recorded; spend is on the order of $1 |
+| 1 | First tick ran its work session; the baseline audit and access check from init are recorded; spend is on the order of $1 |
 | 1-2 | First digest arrived with the focus and why, and a 30-day plan. Read the plan and push back. |
 | 3-7 | First PRs and drafts arrive, each tied to a bet. Review them hard: this is where you teach the claims ledger and the voice. |
-| 7 | `gtm status` shows the budget on track, no alerts, and open bets with check dates |
+| 7 | `gtm.py status` shows the budget on track, no alerts, and open bets with check dates |
 
 ## 5. Operating it
 

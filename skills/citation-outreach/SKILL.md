@@ -22,7 +22,7 @@ honest, disclosed, and useful to the recipient's readers whether or not they nam
 (field `root`). It lives outside the product repo by default; site changes still go to the product
 repo as PRs.
 
-Copy this skill drafts passes the `../writing` gates first: every claim from the ledger, something
+Copy drafted by this skill must pass the `../writing` gates first: every claim from the ledger, something
 the current top answers lack, and no AI-tell phrasing.
 
 ## Requires

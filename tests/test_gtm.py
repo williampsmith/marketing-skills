@@ -23,10 +23,17 @@ def b(answers, mention, rank=None):
 
 class Base(StoreCase):
     module = gtm
+    installed = None  # None = every skill counts as installed (the full plugin); or a set of names
 
     def setUp(self):
         super().setUp()
         self.today = dt.date.today()
+        self.real_installed = gtm.skill_installed
+        gtm.skill_installed = (lambda n: True) if self.installed is None else (lambda n: n in self.installed)
+
+    def tearDown(self):
+        gtm.skill_installed = self.real_installed
+        super().tearDown()
 
     @property
     def root(self) -> Path:
@@ -340,12 +347,14 @@ class FocusTest(Base):
     def test_focus_holds_for_30_days_unless_severe(self):
         self.run_cli("init")
         self.measured(visits=5000, signups=100, activated=25, paid=1, retained=1)  # activation 25% (score 0.83)
-        self.edit(focus={"track": "demand", "since": self.iso(5), "reason": "earlier", "stage": "launched"})
-        self.assertEqual(self.focus()["track"], "demand")
-        self.edit(focus={"track": "demand", "since": self.iso(31), "reason": "earlier", "stage": "launched"})
+        self.edit(focus={"track": "demand", "since": self.iso(5), "basis": "earlier", "stage": "launched"})
+        f = self.focus()
+        self.assertEqual(f["track"], "demand")
+        self.assertTrue(f["reason"].endswith("earlier"))
+        self.edit(focus={"track": "demand", "since": self.iso(31), "basis": "earlier", "stage": "launched"})
         self.assertEqual(self.focus()["track"], "conversion")
         gtm.metric_add("stage:activated", 5)  # 5% vs 30%: severe, overrides the hold
-        self.edit(focus={"track": "demand", "since": self.iso(5), "reason": "earlier", "stage": "launched"})
+        self.edit(focus={"track": "demand", "since": self.iso(5), "basis": "earlier", "stage": "launched"})
         self.assertEqual(self.focus()["track"], "conversion")
 
     def test_tick_persists_focus(self):
@@ -385,26 +394,41 @@ class NextTest(Base):
 
 
 class CooldownTest(Base):
-    def test_cooldown_refuses_repeat_contact(self):
+    def test_may_gates_and_record_never_drops_spend(self):
         self.run_cli("init")
         self.assertEqual(self.run_cli("may", "outreach_refresh", "example.com")[0], 0)
-        self.run_cli("record", "outreach_refresh", "--key", "example.com")
+        self.run_cli("record", "outreach_refresh", "--key", "example.com", "--key", "other.org", "--cost", "0.3")
         self.assertEqual(self.run_cli("may", "outreach_refresh", "example.com")[0], 3)
-        self.assertEqual(self.run_cli("record", "outreach_refresh", "--key", "example.com")[0], 3)
-        self.assertEqual(self.run_cli("record", "outreach_refresh", "--key", "example.com", "--force")[0], 0)
+        self.assertEqual(self.run_cli("may", "outreach_refresh", "other.org")[0], 3)
+        code, _ = self.run_cli("record", "outreach_refresh", "--key", "example.com", "--cost", "0.2")
+        self.assertEqual(code, 0)                                   # recorded anyway, with a warning
+        self.assertIn("cools down", self.last_err)
+        self.assertAlmostEqual(gtm.month_spend(gtm.spend_rows()), 0.5)
         s = self.state()
         s["keys"]["outreach_refresh"]["example.com"] = self.iso(46)
         self.put_state(s)
         self.assertEqual(self.run_cli("may", "outreach_refresh", "example.com")[0], 0)
 
-    def test_two_failures_escalate(self):
+    def test_two_failures_stop_the_key_until_cleared(self):
         self.run_cli("init")
         self.run_cli("record", "work_session", "--failed", "--key", "pr-12")
         self.assertFalse(any("ESCALATE" in a for a in self.tick()["alerts"]))
+        self.assertEqual(self.run_cli("may", "work_session", "pr-12")[0], 0)
         self.run_cli("record", "work_session", "--failed", "--key", "pr-12")
         self.assertTrue(any("ESCALATE" in a and "pr-12" in a for a in self.tick()["alerts"]))
+        self.assertEqual(self.run_cli("may", "work_session", "pr-12")[0], 3)
         self.run_cli("record", "work_session", "--key", "pr-12")
         self.assertFalse(any("ESCALATE" in a for a in self.tick()["alerts"]))
+
+    def test_events_and_cursors_do_not_touch_cadence(self):
+        self.run_cli("init")
+        self.run_cli("record", "launch_scan", "--event", "abc123", "--cursor", "abc123")
+        t = self.tick()                                             # must not crash on a non-date
+        self.assertEqual(self.state()["last_run"]["launch_scan"], self.today.isoformat())
+        self.edit(last_run={"launch_scan": self.iso(2)})
+        entry = next(j for j in self.tick()["due"] if j["job"] == "launch_scan")
+        self.assertEqual(entry["cursor"], "abc123")
+        self.assertTrue(t["due"] is not None)
 
 
 class KillSwitchTest(Base):
@@ -427,50 +451,76 @@ class BetTest(Base):
                             "--expected", "0.3", "--check", check or (self.today + dt.timedelta(days=28)).isoformat(),
                             *extra)
 
+    def past_bet(self, id="old", method="before_after", **kw):
+        b = {"id": id, "track": "discoverability", "channel": "ai_search", "tactic": "comparison_page",
+             "metric": "ai:mention:comparison", "baseline": 0.1, "expected": 0.3, "method": method,
+             "control_metric": None, "control_baseline": None, "opened": self.iso(30), "check": self.iso(1),
+             "status": "open", "hypothesis": "h", "result": None, **kw}
+        gtm.save_bets(gtm.bets() + [b])
+
     def test_open_validates(self):
         self.run_cli("init")
-        self.assertEqual(self.open("--method", "holdout")[0], 1)          # holdout needs a control
-        self.assertEqual(self.open(check=self.iso(1))[0], 1)               # check date in the past
+        self.assertEqual(self.open("--method", "holdout")[0], 1)                       # no control
+        self.assertEqual(self.open("--method", "holdout", "--control-metric", "ai:mention:category")[0], 1)
+        self.assertEqual(self.open(check=self.iso(1))[0], 1)
         self.assertEqual(self.open()[0], 0)
-        self.assertEqual(self.open()[0], 1)                                # duplicate id
+        self.assertEqual(self.open()[0], 1)
         self.assertTrue((self.root / "posthog-outbox.jsonl").exists())
 
-    def test_close_reads_metric_store_and_judges(self):
+    def test_close_needs_a_value_dated_after_the_check(self):
         self.run_cli("init")
-        self.open()
-        self.assertEqual(self.run_cli("bet", "close", "b1")[0], 1)         # before the check date
+        self.past_bet()
+        gtm.metric_add("ai:mention:comparison", 0.25, date=self.iso(10))              # before the check date
+        self.assertEqual(self.run_cli("bet", "close", "old")[0], 1)
+        self.assertIn("stays open", self.last_err)
         gtm.metric_add("ai:mention:comparison", 0.25)
-        out = self.json_cli("bet", "close", "b1", "--force")
-        self.assertEqual(out["status"], "won")                             # 0.15 of 0.2 expected = 0.75
+        out = self.json_cli("bet", "close", "old")
+        self.assertEqual(out["status"], "won")
+        self.assertEqual(out["result"]["observed_by"], "metrics store")
         self.assertIn("directional", out["result"]["note"])
 
-    def test_holdout_subtracts_control(self):
+    def test_early_close_ignores_the_opening_day_value(self):
         self.run_cli("init")
-        self.open("--method", "holdout", "--control-metric", "ai:mention:control", "--control-baseline", "0.1", id="h")
-        gtm.metric_add("ai:mention:comparison", 0.25)
-        gtm.metric_add("ai:mention:control", 0.22)                           # the tide rose too
-        out = self.json_cli("bet", "close", "h", "--force")
-        self.assertEqual(out["status"], "inconclusive")                    # 0.15 - 0.12 = 0.03 of 0.2
+        self.open()
+        self.assertEqual(self.run_cli("bet", "close", "b1")[0], 1)                     # before the check date
+        gtm.metric_add("ai:mention:comparison", 0.1)                                   # same day as opening
+        self.assertEqual(self.run_cli("bet", "close", "b1", "--force")[0], 1)
 
-    def test_ab_needs_p_and_underpowered_is_inconclusive(self):
+    def test_hand_values_need_a_source(self):
         self.run_cli("init")
-        self.open("--method", "ab", id="ab")
-        self.assertEqual(self.run_cli("bet", "close", "ab", "--force", "--observed", "0.3")[0], 1)
-        self.assertEqual(self.json_cli("bet", "close", "ab", "--force", "--observed", "0.3",
-                                       "--p-value", "0.2")["status"], "inconclusive")
-        self.open(id="small")
-        self.assertEqual(self.json_cli("bet", "close", "small", "--force", "--observed", "0.4",
-                                       "--n", "30")["status"], "inconclusive")
+        self.past_bet()
+        self.assertEqual(self.run_cli("bet", "close", "old", "--observed", "0.4")[0], 1)
+        out = self.json_cli("bet", "close", "old", "--observed", "0.4", "--source", "posthog insight 123")
+        self.assertEqual(out["result"]["observed_by"], "agent: posthog insight 123")
+
+    def test_holdout_subtracts_a_control_measured_after_the_check(self):
+        self.run_cli("init")
+        self.past_bet(id="h", method="holdout", control_metric="ai:mention:category", control_baseline=0.1)
+        gtm.metric_add("ai:mention:comparison", 0.25)
+        self.assertEqual(self.run_cli("bet", "close", "h")[0], 1)                      # control not measured
+        gtm.metric_add("ai:mention:category", 0.22)                                    # the tide rose too
+        self.assertEqual(self.json_cli("bet", "close", "h")["status"], "inconclusive")  # 0.15 - 0.12 = 0.03
+
+    def test_ab_from_counts_and_underpowered(self):
+        self.run_cli("init")
+        self.past_bet(id="ab", method="ab", baseline=0.05, expected=0.06)
+        self.assertEqual(self.run_cli("bet", "close", "ab")[0], 1)                      # needs counts
+        out = self.json_cli("bet", "close", "ab", "--a", "10000:500", "--b", "10000:600", "--source", "posthog exp 7")
+        self.assertEqual(out["status"], "won")
+        self.assertLess(out["result"]["observed"], 0.07)
+        self.past_bet(id="ab2", method="ab", baseline=0.05, expected=0.06)
+        out = self.json_cli("bet", "close", "ab2", "--a", "50:2", "--b", "50:9", "--source", "x")
+        self.assertEqual(out["status"], "inconclusive")
+        self.assertIn("underpowered", out["result"]["note"])
 
     def test_due_bets_appear_in_tick_and_learnings(self):
         self.run_cli("init")
-        gtm.save_bets([{"id": "old", "track": "discoverability", "channel": "ai_search", "tactic": "comparison_page",
-                        "metric": "m", "baseline": 0.1, "expected": 0.3, "method": "holdout", "control_metric": "c",
-                        "control_baseline": 0.1, "opened": self.iso(30), "check": self.iso(1), "status": "open",
-                        "hypothesis": "h", "result": None}])
+        self.past_bet(method="holdout", control_metric="ai:mention:category", control_baseline=0.1)
         due = [j for j in self.tick()["due"] if j["job"] == "bet_close"]
         self.assertEqual(due[0]["event"], "old")
-        self.json_cli("bet", "close", "old", "--observed", "0.4", "--control-observed", "0.1")
+        gtm.metric_add("ai:mention:comparison", 0.4)
+        gtm.metric_add("ai:mention:category", 0.1)
+        self.assertEqual(self.json_cli("bet", "close", "old")["status"], "won")
         cands = self.json_cli("learnings")
         self.assertEqual(cands[0]["id"], "old")
         self.run_cli("learnings", "--accept", "old")
@@ -513,3 +563,71 @@ class ProfileTest(Base):
         self.assertEqual(self.run_cli("profile", "--attention", "tiktok=0.1")[0], 1)
         self.assertEqual(self.run_cli("profile", "--attention", "outbound=2")[0], 1)
         self.assertTrue(self.json_cli("profile", "--confirm")["confirmed"])
+
+
+class InitAndStageTest(Base):
+    def test_force_keeps_kill_switch_budget_and_failures(self):
+        self.run_cli("init", "--budget", "5")
+        self.run_cli("record", "work_session", "--failed", "--key", "k")
+        self.run_cli("pause")
+        self.assertEqual(self.run_cli("init", "--force")[0], 1)          # paused: refuse
+        self.run_cli("resume")
+        self.run_cli("init", "--force")
+        s = self.state()
+        self.assertEqual(s["budget_usd_month"], 5)
+        self.assertEqual(s["failures"]["work_session"]["k"], 1)
+
+    def test_init_applies_explicit_flags_and_stage_moves_to_launch(self):
+        self.run_cli("init", "--stage", "prelaunch")
+        self.run_cli("init", "--budget", "40", "--site-url", "https://acme.com")
+        s = self.state()
+        self.assertEqual((s["budget_usd_month"], s["site_url"], s["stage"]), (40, "https://acme.com", "prelaunch"))
+        self.assertEqual(self.tick()["focus"]["track"], "discoverability")
+        self.run_cli("stage", "launched")
+        self.assertEqual(self.state()["stage"], "launched")
+        self.assertEqual(self.tick()["focus"]["track"], "measurement")
+
+
+class RobustnessTest(Base):
+    def test_disabled_measurement_is_never_the_focus(self):
+        self.run_cli("init")
+        self.edit(tracks__measurement__enabled=False)
+        self.assertNotEqual(self.json_cli("focus")["track"], "measurement")
+
+    def test_focus_reason_does_not_grow(self):
+        self.run_cli("init")
+        self.measured(visits=5000, signups=100, activated=25, paid=1, retained=1)
+        self.edit(focus={"track": "demand", "since": self.iso(5), "basis": "earlier", "stage": "launched"})
+        for _ in range(3):
+            self.tick()
+        self.assertEqual(self.state()["focus"]["basis"], "earlier")
+        self.assertEqual(self.json_cli("focus")["reason"].count("holding"), 1)
+
+    def test_digest_while_paused(self):
+        self.run_cli("init")
+        self.run_cli("pause", "--reason", "bad draft")
+        code, out = self.run_cli("digest")
+        self.assertEqual(code, 0, self.last_err)
+        self.assertIn("PAUSED: bad draft", Path(out.strip()).read_text())
+
+
+class MissingSkillsTest(Base):
+    installed = {"ai-search-optimization", "entity-presence", "one-pager", "citation-outreach", "comparison-pages",
+                 "ai-visibility-audit", "gtm", "product-context", "writing"}
+
+    def test_without_measurement_the_funnel_is_not_gated_and_tactics_skip_missing_skills(self):
+        self.run_cli("init")
+        f = self.json_cli("focus")
+        self.assertEqual(f["track"], "discoverability")
+        self.assertTrue(any("measurement" in n for n in f["notes"]))
+        n = self.json_cli("next")
+        skills = {t["skill"] for x in n["slots"] for t in x["tactics"]}
+        self.assertTrue(skills <= self.installed)
+        self.assertIn("measurement", n["skills_not_installed"])
+
+    def test_metrics_recorded_by_hand_turn_the_gate_on(self):
+        self.run_cli("init")
+        gtm.metric_add("tracking_ok", 0)
+        f = self.json_cli("focus")
+        self.assertEqual(f["track"], "measurement")      # broken tracking is the truth, even with no skill for it
+        self.assertEqual(f["skills"], [])                # so the work goes to a human via the digest

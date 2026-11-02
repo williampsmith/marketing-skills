@@ -1,7 +1,8 @@
 # Channel fit
 
 `gtm.py fit` scores every channel from 0 to 1 for this product. Channels below 0.25 (gtm.json
-`fit.min`) are ineligible: no improvement work, no tactics, and their track can't become the focus.
+`fit.min`) are ineligible: no improvement work and no tactics. A track can't become the focus when
+the fit of its eligible channels sums below 0.5 (see `tracks.md`).
 The numbers live in `channel-fit.json`; this file explains them.
 
 ```

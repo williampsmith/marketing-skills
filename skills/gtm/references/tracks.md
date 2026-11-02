@@ -44,15 +44,21 @@ replacing them with the product's baseline (`"floors": {"activated": 0.25}` in g
    tick they appear, whatever the focus.
 2. **Prelaunch** works on discoverability, with measurement as the secondary track.
 3. **Measurement gates the funnel.** Once launched, while measurement is below `funnel_visible`, it
-   is the focus: nothing downstream can be judged.
+   is the focus: nothing downstream can be judged. The gate applies when the measurement skill is
+   installed or measurement metrics have been recorded (by hand, with `gtm.py metric add`);
+   otherwise the digest notes that the funnel can't be judged yet and the rules below run on what
+   data exists.
 4. **Bottleneck.** Each stage with enough data scores `rate / floor`. The lowest-scoring stage's
    track is the focus. If the first stage has fewer entrants than `min_sample`, reach is the
    bottleneck: the focus is discoverability or demand, whichever has made less progress
    (discoverability on a tie).
-5. **Fit.** A track whose eligible channels' fit sums below 0.5 can't be the focus; the next stage
-   is tried. Measurement and conversion always qualify (they work on the product's own site).
-6. **Hold.** A focus holds for 30 days, until its track is complete, or until another stage falls
-   below half its floor. The stage changing (prelaunch to launched) also re-decides.
+5. **Workable.** A track can be the focus only if it is on, not complete, a skill for its current
+   rung is installed, and its eligible channels' fit sums to at least 0.5 (measurement and
+   conversion always pass the fit test: they work on the product's own site). Otherwise the next
+   stage is tried, and as a last resort the first workable track.
+6. **Hold.** A focus holds for 30 days, until its track stops being workable, or until another stage
+   falls below half its floor. Measurement's gate and a stage change (`gtm.py stage launched`)
+   re-decide at once. The saved `focus.basis` keeps the original reason.
 
 ## Shares and the standing priority
 

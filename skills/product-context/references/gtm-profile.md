@@ -14,7 +14,7 @@ copying them here.
 | `attention` | `{channel: 0..1}` | Measured share of buyer attention per channel id (ids are the keys of `channels` in channel-fit.json). Missing means 1.0 (unmeasured). Set only from customer-research evidence. A low value rules a channel out with the reason "buyers aren't there". |
 | `regulated` | `none`, `light`, `heavy` | Multiplies some channels down (see `compliance` in channel-fit.json) and tightens claims review in the writing skill. |
 | `geo` | list of market codes | Not used in the fit maths yet. Outbound and lifecycle skills read it for consent and cold-email rules per country. |
-| `confirmed` | `true` / `false` | Only a human sets this to true. Jobs with `requires: ["profile"]` are skipped until then. Reset to false whenever the profile changes. |
+| `confirmed` | `true` / `false` | Set with `gtm.py profile --confirm` only after the human approves the profile in a live conversation, never in a scheduled run. Any job that declares `requires: ["profile:confirmed"]` is skipped until then. Any change resets it to false. |
 
 `stage` is not in the profile: it is the top-level `stage` in gtm.json (`prelaunch` or `launched`)
 and decides which jobs run at all.

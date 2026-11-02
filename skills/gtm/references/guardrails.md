@@ -62,10 +62,10 @@ first thing on the next run.
 
 - **Cooldowns.** A job with `cooldown_days` and a `dedupe_key` (outreach by target domain, for
   example) must not touch the same key twice inside the window. Check with `gtm.py may JOB KEY`
-  (exit 3 means no), and record the action with `gtm.py record JOB --key KEY`, which refuses inside
-  the window.
+  (exit 3 means no) before acting, and record the action with `gtm.py record JOB --key KEY`.
+  `record` never refuses (spend and history are kept) but warns when a key was inside its window.
 - **Failures.** Record a failed attempt with `gtm.py record JOB --failed --key KEY`. After two
-  failures on one key, `tick` raises an `ESCALATE` alert and the agent stops retrying until a human
+  failures on one key, `tick` raises an `ESCALATE` alert and `may` refuses that key until a human
   has looked. A later successful `record --key` clears the count.
 
 ## Spend

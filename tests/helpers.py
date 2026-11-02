@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -34,6 +35,8 @@ class StoreCase(unittest.TestCase):
         self.env = {k: os.environ.get(k) for k in ("MARKETING_HOME", "MARKETING_STATE")}
         os.environ["MARKETING_HOME"] = str(self.base / "home")
         os.environ.pop("MARKETING_STATE", None)
+        # a git repo of its own, so the store never resolves through a repo that happens to hold TMPDIR
+        subprocess.run(["git", "init", "-q", str(self.product)], check=True)
         os.chdir(self.product)
 
     def tearDown(self):

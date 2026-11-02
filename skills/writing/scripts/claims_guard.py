@@ -132,7 +132,8 @@ def competitors_from_context(path: Path) -> list[str]:
     if not path.exists():
         return []
     for line in path.read_text().splitlines():
-        m = re.match(r"\s*[-*]?\s*\**alternatives:?\**:?\s*(.+)", line, flags=re.I)
+        # only the template's key form: "- **Alternatives:** a, b" or "Alternatives: a, b"
+        m = re.match(r"\s*[-*]?\s*(?:\*\*alternatives:\*\*|\*\*alternatives\*\*:|alternatives:)\s*(.+)", line, flags=re.I)
         if m:
             names = [n.strip(" .*") for n in re.split(r",|;", m.group(1))]
             return [n for n in names if n and n.lower() not in ("do nothing", "nothing") and not n.startswith("<")]
