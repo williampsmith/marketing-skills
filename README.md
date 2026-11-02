@@ -77,6 +77,9 @@ into which tactics get tried next. A result becomes a learning only after a huma
 | `customer-research` | Where buyers actually spend attention (measured, feeding fit), their language and objections | ~$0.10-0.50 per study |
 | `outbound` | Buying-signal sweeps, account research, verified contacts, drafts into batches; sends only approved batches on channels a human opened, within caps | ~$0.50 per weekly sweep |
 | `creative` | Briefs, channel research, scripts and variants, generation through treg's image, video and voice models, a review page; nothing publishes | per asset: ~$0.01 images, ~$1 video |
+| `cro` | Finds which page, step and source leaks before the first step; reviews the page; ships one change at a time as a flagged PR with a bet | free |
+| `activation` | Defines the activation event with the team; shortens signup and onboarding to the first value moment; upgrade moments tied to value; PRs behind flags | free |
+| `experiments` | Picks A/B, holdout, staggered or before/after from the traffic (`stats.py`), fixes the metric first, checks sample ratio, closes bets from real counts | free |
 | `social` | Organic posts and community answers drafted from launches, pages and bets, for a human to post | free |
 
 ### Where the data lives

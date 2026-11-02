@@ -34,7 +34,9 @@ the loop and `docs/design/growth-operator.md` for the design being implemented.
   (attention weights from research evidence), `skills/outbound/scripts/send_batch.py` (sends only
   approved batches, through gtm.py's `send_allowed`; SMTP from env only; tests replace
   `smtp_connect`), `skills/creative/scripts/review_page.py` (self-contained review page; refuses
-  assets without a claim row or an AI disclosure).
+  assets without a claim row or an AI disclosure), `skills/experiments/scripts/stats.py` (sample
+  size, run length, two-proportion z-test, holdout arithmetic; `tests/test_experiments.py` checks
+  it against textbook values and against gtm.py's own z-test).
   All Python is **stdlib only** and runs with plain `python3` (3.9+), since it executes inside
   other people's repos.
 - `tests/`: `python3 -m unittest discover tests`. Run after any script change. Tests that touch

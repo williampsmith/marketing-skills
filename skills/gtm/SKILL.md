@@ -182,7 +182,8 @@ At most `max_actions` (2) per session. Finished, reviewable work beats half-done
    --hypothesis "…" --metric <metric it should move> --baseline <now> --expected <target> --method
    <ab|holdout|staggered|before_after> --check <date>`. Prefer the strongest method the traffic
    allows: an A/B test (closed with `--a VISITORS:CONVERSIONS --b …` from the experiment's results)
-   when there is enough traffic; a holdout (change half the pages or prompt topics, keep half as
+   when `../experiments/scripts/stats.py days` says it finishes in time (`run_it: true`); a
+   holdout (change half the pages or prompt topics, keep half as
    `--control-metric … --control-baseline <now>`) when the unit can be split; staggered rollout for
    many similar units; before/after only as a last resort. Check dates: 2-4 weeks for AI answers and
    pages, longer for SEO, the sales cycle's leading indicator for long cycles.
