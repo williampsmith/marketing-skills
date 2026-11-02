@@ -366,7 +366,7 @@ properties and never committed to the product repo.
 | Product and web analytics, funnels, experiments, flags, surveys, marketing metrics | **PostHog Cloud** (the reference setup; US or EU region by data residency) | system of record for the funnel, the operator's metrics and the team's dashboard; the free tier covers an early-stage product |
 | Search data | Search Console, GA4 via treg connected accounts | free |
 | AI visibility, SERP, backlinks, social, ads library, enrichment | **treg** | metered |
-| Revenue | Stripe, **synced into PostHog** with PostHog's Stripe source | MRR, churn, expansion, queried through PostHog |
+| Revenue | pluggable, always **read through PostHog**; Stripe by default (below) | MRR, churn, expansion, ARPU, LTV |
 | Creative generation | treg (Seedance, image models, voice) | via the `make-ugc` treg skill where it fits |
 
 **Access (checked 2026-11-01).** treg's catalog has no PostHog or Stripe endpoints, so the agent
@@ -376,10 +376,32 @@ talks to PostHog directly. That is the only direct integration the plugin needs:
   `marketing_metric` and `marketing_bet` events.
 - **Reading:** a PostHog personal API key, scoped to query read on the one project, runs HogQL
   queries for funnel stages, revenue and the operator's own metrics.
-- **Stripe:** the agent never holds a Stripe key. A human connects Stripe once as a PostHog data
+- **Billing systems:** the agent never holds a billing key. For Stripe, A human connects Stripe once as a PostHog data
   warehouse source, using a restricted key with webhook sync, as PostHog recommends. Revenue then
   reaches the agent through the same query key. Stripe's tables count against the warehouse's free
-  1M rows a month.
+  1M rows a month. Other billing systems follow the same rule (below).
+
+**Revenue sources.** How a product takes money varies; where the agent reads it doesn't. Every
+option ends in PostHog, and `measurement` sets it up from `revenue_source` in `gtm.json`, chosen at
+init from what the repo and the human say about billing:
+
+| `revenue_source` | when | how it reaches PostHog | extra cost |
+|---|---|---|---|
+| `stripe` (default) | web checkout on Stripe | Stripe data warehouse source with webhook sync; PostHog revenue analytics computes MRR (new, expansion, contraction, churn), gross revenue, ARPU, LTV and customers | none beyond Stripe's fees |
+| `revenuecat` | mobile in-app subscriptions, or mobile plus web | RevenueCat data warehouse source. PostHog's revenue analytics doesn't support RevenueCat yet (listed as coming), so `measurement` ships HogQL queries for the same metrics against the imported tables. | RevenueCat: free to $2,500 tracked revenue a month, then 1% |
+| `paddle` · `chargebee` · `polar` | those billing platforms | their PostHog data warehouse sources, queried the same way until revenue analytics supports them | none |
+| `events` | own billing or a license server | the server sends `purchase`, `renewal` and `refund` events with revenue properties to PostHog; revenue analytics works from events | none |
+
+RevenueCat is recommended only when a product sells inside mobile apps. Stripe can't see App Store
+or Google Play revenue, and cross-platform entitlements and native paywall tests are what the 1%
+pays for. For web-only products, Stripe through PostHog gives the operator the same metrics at no
+extra cost, and PostHog flags cover price experiments.
+
+For the `events` option, `measurement` opens a PR that adds the capture call where the product
+records a purchase or license activation, keyed to the same PostHog person as the visitor so
+revenue joins the funnel. A product with no PostHog person at purchase time (e.g. an offline
+license key) passes the email or license ID as the distinct ID and aliases it when the user
+first activates.
 
 **PostHog Cloud plans.**
 - **Free:** 1M analytics events, 1M flag and experiment requests, 1,500 survey responses and 1M
@@ -484,7 +506,7 @@ run in CI against a fixture repo.
 | phase | version | delivers | done when |
 |---|---|---|---|
 | 1 · foundations | 0.4 | `product-context` with GTM profile, fit (`gtm.py fit`), tracks and focus (`gtm.py focus`) with Discoverability's standing share, job contract, state store (`dir`, `git`, `repo` backends), bet ledger, `writing`, guardrails references, eval harness | an Obscript-like fixture picks the right focus with a stated reason; an enterprise fixture marks UGC ineligible; a tick with the `dir` backend leaves the product repo untouched except for PRs |
-| 2 · measurement | 0.5 | `measurement` with PostHog setup and sync, Search Console and Stripe sensors, monthly report, HTML fallback | the dashboard shows AI visibility and the funnel side by side; a bet closes from metrics alone |
+| 2 · measurement | 0.5 | `measurement` with PostHog setup and sync, Search Console sensor, revenue source setup (`stripe`, `revenuecat`, `events` first), monthly report, HTML fallback | the dashboard shows AI visibility and the funnel side by side; a bet closes from metrics alone |
 | 3 · demand | 0.6 | `customer-research`, `competitive-intel`, `seo`, `outbound` (drafts, then approve-to-send), `creative`, `social`, `content` rename | attention scores come from data; one creative asset goes from brief to review page to measured |
 | 4 · conversion | 0.7 | `cro`, `activation`, `experiments` with PostHog flags | an A/B test runs end to end as a PR plus flag |
 | 5 · send and spend | 0.8+ | `lifecycle`, `paid`, bounded authority | a capped send and a capped budget change run with the kill switch tested |
@@ -520,7 +542,8 @@ run in CI against a fixture repo.
 ## 16. Research findings (2026-11-01)
 
 1. **treg and PostHog or Stripe:** treg's catalog has neither. The agent uses PostHog's API directly
-   with two scoped keys, and Stripe reaches it only through PostHog's Stripe source (section 9.2).
+   with two scoped keys. Revenue reaches it only through PostHog, from Stripe, RevenueCat, other
+   billing sources or purchase events (section 9.2).
    Search Console and GA4 stay on treg's connected accounts.
 2. **Scheduled dashboard reports:** PostHog's free plan includes up to 5 email or Slack
    subscriptions; pay-as-you-go ($0 base) makes them unlimited. The reference setup uses one
@@ -529,6 +552,9 @@ run in CI against a fixture repo.
    support a high AI-search fit for every B2B motion and lower trust in social feeds than in peers;
    cost benchmarks are too inconsistent to rely on, so economics uses conservative floors that
    measured costs replace.
+4. **Stripe or RevenueCat:** different jobs. RevenueCat covers mobile store subscriptions and
+   costs 1% of tracked revenue above $2,500 a month; for web billing, Stripe through PostHog gives
+   the same revenue metrics at no extra cost. Revenue is a pluggable source (section 9.2).
 
 Sources: [G2 survey coverage](https://www.marketscale.com/industries/marketing-tech/b2b-buyers-are-forming-vendor-shortlists-before-ever-talking-to-sales-and-ai-is-why),
 [Forrester 2026 survey coverage](https://authoritytech.io/curated/forrester-genai-b2b-buyer-starting-point-shortlist-2026),
@@ -536,6 +562,8 @@ Sources: [G2 survey coverage](https://www.marketscale.com/industries/marketing-t
 [CAC payback benchmarks](https://www.saashero.net/strategy/maxio-cac-benchmarks-b2b-saas/),
 [PostHog pricing](https://posthog.com/pricing),
 [PostHog subscriptions](https://posthog.com/docs/product-analytics/subscriptions),
-[PostHog Stripe source](https://posthog.com/docs/data-pipelines/sources/stripe).
+[PostHog Stripe source](https://posthog.com/docs/data-pipelines/sources/stripe),
+[PostHog revenue platforms](https://posthog.com/docs/revenue-analytics/payment-platforms),
+[RevenueCat pricing](https://www.revenuecat.com/pricing/).
 The survey figures come from secondary coverage; the primary G2 and Forrester reports were not
 read.
