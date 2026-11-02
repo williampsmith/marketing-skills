@@ -1,7 +1,9 @@
 # The query map: `<state>/seo/queries.csv`
 
 A CSV with a header row. `search_console.py` (measurement) reads the `query` column to compute
-`query_top10_share`; the other columns are for the agent and the human.
+`query_top10_share`, and each week writes `position` and `last_checked` back for the mapped queries
+Search Console reports (it adds those columns if they are missing and leaves the others alone). The
+other columns are for the agent and the human.
 
 | column | values | meaning |
 |---|---|---|

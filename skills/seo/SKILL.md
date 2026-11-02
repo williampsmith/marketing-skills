@@ -42,11 +42,12 @@ It reads the sitemap (following indexes), fetches each page once with a polite d
 `<state>/seo/crawl.json` and the `seo_problems` metric. Then:
 
 - Compare with last week's counts. A new `status`, `noindex`, `robots` or `canonical` problem on a
-  page that had traffic is an alert: say so in the digest now.
+  key path (gtm.json `key_paths`) or a page that had traffic is an alert: say so in the digest now.
 - Group fixes by cause, not by page (one template bug can noindex fifty pages). Fixes go through work
   sessions as PRs, each with a bet (metric `indexed_ratio` or `query_top10_share`).
 - Problems that are deliberate (staging hosts, private paths) go in gtm.json `accepted_problems` with
-  a human's yes. What each problem means and how to fix it: `references/technical.md`.
+  a human's yes, as `"<kind>: <url>"` (one problem) or the bare URL (every problem on that page).
+  `crawl_check.py` leaves them out of its report and the `seo_problems` count. What each problem means and how to fix it: `references/technical.md`.
 
 ## The query map
 
@@ -67,8 +68,8 @@ Build it in `init` or on the first run, then keep it current:
    `serpstat.google.domain.ranked_keywords` shows what a competitor ranks for.
 3. **Assign** each query to an existing page, or mark it `gap`. Gaps go to `<state>/pages.md` as
    candidates for `../content` (or `../comparison-pages` for "vs" and "alternatives" queries).
-4. `search_console.py` fills `position` and `last_checked` weekly through measurement; update
-   `status` when pages ship.
+4. The weekly `search_console` job (measurement) writes each mapped query's average `position` and
+   `last_checked` back into the file; you update `status` when pages ship.
 
 ## Improving rankings
 
@@ -88,7 +89,8 @@ weeks; prefer a staggered rollout when the same change applies to many pages.
 ## Limits
 
 - Never delete, noindex, or redirect a page that gets traffic or has backlinks without the owner's
-  approval. Check Search Console clicks and `treg.web.backlinks.summary` first.
+  approval. Check Search Console clicks and `treg.web.backlinks.summary` (checked 2026-11-02; verify
+  with `catalog_get`) first.
 - Programmatic pages only when each page carries real, unique data a searcher needs (an integration's
   actual setup, a location's actual details). Templated pages that differ only by a keyword get the
   whole site judged as thin.

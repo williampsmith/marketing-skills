@@ -55,10 +55,14 @@ repo or in PostHog event properties.
    merge state by hand.
 3. **Apply replies.** Read the human's replies to the last digest (chat or issue). "pause" → `gtm.py
    pause --reason "<their words>"`. Approvals → apply exactly what was approved (e.g. "approve 2"
-   approves item 2 of "Needs you"), nothing more, and log each in plan.md. A send batch approval
-   ("approve batch <id>, 12") → `gtm.py approve <id> --count 12`; a creative approval
-   ("approve creative <batch>: <ids>") → note the ids in plan.md for the human who posts them.
-   Unclear replies: ask, don't guess.
+   approves item 2 of "Needs you"), nothing more, and log each in plan.md. Batch approvals and
+   authority grants are the exception: they need the human present. A scheduled run is unattended
+   (`MARKETING_UNATTENDED=1`, and `gtm.py` refuses them), so it records such a reply in plan.md
+   under "Decisions waiting on a human" as pending, verbatim. In a session with the human present
+   (they run `/marketing:gtm`, or tell the Hermes agent in chat), apply it with their words:
+   `gtm.py approve <id> --count 12 --quote "<their reply>"` or `gtm.py authority grant … --quote
+   "<their words>"`. A creative approval ("approve creative <batch>: <ids>") → note the ids in
+   plan.md for the human who posts them. Unclear replies: ask, don't guess.
 4. Check tools: `python3`, `treg --version` and `treg balance`, `gh auth status` if PRs are expected.
    If treg is missing or empty, run only free jobs and alert.
 5. `gtm.py tick` → `focus`, `due`, `deferred`, `skipped`, `alerts`, `budget`, `tracks`. If it says
@@ -145,7 +149,7 @@ Skipped jobs (missing connection, ineligible channel, track off) go in the diges
 | `metrics_sync` | `../measurement`: `posthog.py sync` (send the outbox, pull funnel counts and queries) → record. |
 | `search_console` | `../measurement`: `search_console.py` (stored property) → record; exit 1 means an error, nothing written. |
 | `monthly_report` | `../measurement`: `report.py` → link the scorecard in the digest → record. |
-| `seo_crawl` | `../seo`: `crawl_check.py <site_url>` → record. New `noindex`, `status` or `robots` problems on key paths are alerts; the rest go to the backlog for work sessions. |
+| `seo_crawl` | `../seo`: `crawl_check.py <site_url>` → record. New `noindex`, `status`, `robots` or `canonical` problems on key paths are alerts; the rest go to the backlog for work sessions. Deliberate ones go in `accepted_problems` as `"<kind>: <url>"`. |
 | `outbound_signals` | `../outbound` steps 1-3: sweep the plan's signals, `gtm.py may outbound_signals <domain>` per account, research packs, verified contacts, drafts into a batch → `record outbound_signals --key <domain>` per account drafted, with `--cost`. The batch goes in "Needs you"; nothing is sent this run. |
 | `panel_review` | ai-visibility-audit panel design: propose changes, never apply them silently. Bump `panel_version`. |
 
@@ -224,7 +228,7 @@ Full rules: `references/guardrails.md` and `references/compliance.md`.
 | measure, research, score, read pages, draft, write `<state>` | yes |
 | spend treg balance | yes, within `budget --need` and the per-run cap |
 | site changes, pages, robots.txt, schema, tracking code | **PR only**: a human merges |
-| outreach, posts, profile edits, any message to a person | **draft only**. Email on a channel a human granted approve-to-send (`gtm.py authority grant <channel> --level approve_to_send`): only the drafts a human approved (`gtm.py approve <batch> --count N`), through `../outbound/scripts/send_batch.py`, which re-checks the kill switch, caps, suppression and cooldowns. Posts and community replies are never sent by the agent. |
+| outreach, posts, profile edits, any message to a person | **draft only**. Email on a channel a human granted approve-to-send (`gtm.py authority grant <channel> --level approve_to_send --quote …`): only the drafts a human approved, pinned by content (`gtm.py approve <batch> --count N --quote …`, both applied only with the human present), through `../outbound/scripts/send_batch.py`, which re-checks the kill switch before every message, caps, suppression and cooldowns. Posts and community replies are never sent by the agent. |
 | change the profile, overrides, floors, panel, budget, cadence | **propose** in the digest; apply after a human says yes |
 | delete or overwrite anything outside `<state>` | **never** unattended |
 
@@ -248,7 +252,8 @@ Then notify per `notify.channel` in gtm.json with the "Needs you" list, the focu
 line, nothing more:
 
 - `gateway`: the host agent's own messaging (e.g. Hermes `send_message`). Replies like "approve 2"
-  are applied on the next run: apply only what was approved, and log it.
+  are applied on the next run: apply only what was approved, and log it. Batch approvals and grants
+  wait for a human-present turn (see "Apply replies").
 - `github`: comment on a pinned issue titled "GTM digest" (`gh issue comment`).
 - `none`: the digest file is the only output.
 

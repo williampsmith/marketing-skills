@@ -79,3 +79,46 @@ class AttentionTest(StoreCase):
         prof = json.loads((gtm.R() / "gtm.json").read_text())["profile"]
         self.assertEqual(prof["attention"]["short_video"], 0.05)
         self.assertFalse(prof["confirmed"])
+
+
+class CrawlRobustnessTest(StoreCase):
+    module = crawl
+
+    def test_apex_redirecting_to_www_is_one_site(self):
+        www = {k.replace("https://acme.com", "https://www.acme.com"):
+               (v[0], v[1], v[2].replace("https://acme.com", "https://www.acme.com")) for k, v in SITE.items()}
+        www["https://acme.com/"] = (301, {"location": "https://www.acme.com/"}, "")
+        www["https://acme.com/robots.txt"] = (301, {"location": "https://www.acme.com/robots.txt"}, "")
+        www["https://acme.com/sitemap.xml"] = (301, {"location": "https://www.acme.com/sitemap.xml"}, "")
+        out = crawl.crawl("https://acme.com", fetcher=lambda u: www.get(u, (404, {}, "")), delay=0)
+        kinds = {p["kind"] for p in out["problems"]}
+        self.assertNotIn("offsite", kinds)
+        self.assertIn("noindex", kinds)
+
+    def test_a_failing_page_is_a_finding_not_a_crash(self):
+        real = crawl.OPENER
+
+        class Opener:
+            def open(self, req, timeout=30):
+                raise ValueError("unknown url type")
+        crawl.OPENER = Opener()
+        try:
+            self.assertEqual(crawl.fetch("nonsense")[0], 0)
+        finally:
+            crawl.OPENER = real
+
+    def test_accepted_problems_are_left_out(self):
+        out = crawl.crawl("https://acme.com", fetcher=fake, delay=0, accepted=["noindex: https://acme.com/a"])
+        self.assertNotIn(("https://acme.com/a", "noindex"), {(p["url"], p["kind"]) for p in out["problems"]})
+        self.assertGreaterEqual(out["accepted"], 1)
+
+
+class AttentionValidationTest(StoreCase):
+    module = attention
+
+    def test_relevant_above_sampled_is_rejected(self):
+        res = attention.weights({"sources": {"reddit": {"sampled": 20, "relevant": 30},
+                                             "linkedin": {"sampled": "many", "relevant": 2}}})
+        self.assertEqual(res["weights"], {})
+        self.assertIn("reddit", res["unmeasured"])
+        self.assertIn("linkedin", res["unmeasured"])

@@ -214,6 +214,10 @@ class SearchConsoleTest(StoreCase):
         out = sc.measure("sc-domain:acme.com", "", ["acme"], 28, call=self.fake_call, sitemap=lambda u: [])
         self.assertEqual(out["query_top10_share"], 0.5)
         self.assertEqual(out["top10_basis"], "query map")
+        sc.update_query_map(gtm.R(), out["_positions"])
+        rows = (gtm.R() / "seo" / "queries.csv").read_text().splitlines()
+        self.assertIn("position", rows[0])
+        self.assertTrue(rows[1].startswith("redact pdf,how,/r,6.0,"))
 
     def test_cli_needs_a_property_and_brand_terms(self):
         self.assertEqual(self.run_cli()[0], 1)

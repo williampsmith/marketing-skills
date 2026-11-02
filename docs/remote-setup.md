@@ -32,9 +32,16 @@ This is the high-level runbook. Mechanics for each host are in
 
 The agent never needs a billing key (Stripe, RevenueCat, …): revenue reaches it through PostHog.
 
-Sending authority is granted per channel by a human, never by the agent:
-`gtm.py authority grant outbound --level approve_to_send --daily-cap 20`. Until then every channel
-is drafts only, and even after it the agent sends only the batches a human approved.
+Sending authority is granted per channel by a human, never by the agent, in a session where the human
+is present: `gtm.py authority grant outbound --level approve_to_send --daily-cap 20 --quote "<your
+words>"`. Until then every channel is drafts only, and even after it the agent sends only the
+batches a human approved (`gtm.py approve <batch> --count N --quote "<your reply>"`, pinned to the
+drafts' content).
+
+Every scheduled run sets `MARKETING_UNATTENDED=1` in its environment, and `gtm.py` then refuses
+approvals and grants. A scheduled run that receives one records it in `plan.md` as pending; it is
+applied in the next human-present session (you run `/marketing:gtm`, or tell the Hermes agent in
+chat), with your words quoted.
 
 What the agent must **not** get: deploy credentials for the website, DNS or CDN access, logins to
 the main domain's email or to social accounts, or analytics admin. Everything public goes through a human. That's what keeps
@@ -58,7 +65,8 @@ go through PRs, and its own bookkeeping goes to the state store.
    GTM profile, claims ledger, entity card, prompt panel, stage and goal. The run ends with
    `gtm.py sync push`.
 4. Create a daily routine with `/schedule`. Give it the repo and the prompt from `hosts.md`, and put
-   `MARKETING_STATE=<state repo git URL>` and the treg token in its environment as secrets.
+   `MARKETING_STATE=<state repo git URL>`, `MARKETING_UNATTENDED=1` and the treg token in its
+   environment as secrets.
 5. Watch the first week (section 4).
 
 ### A2. Your own server
@@ -69,7 +77,7 @@ go through PRs, and its own bookkeeping goes to the state store.
    (`~/.marketing/<owner>-<repo>/`) keeps state on the server; include it in the server's backups.
 3. Run `init` interactively over SSH (step A1.3, without the state repo).
 4. Add one cron line that runs Claude Code headless in the repo once a day, with the gtm tick-mode
-   prompt, and logs to a file. Use a non-interactive permission mode that allows only what the
+   prompt and `MARKETING_UNATTENDED=1`, and logs to a file. Use a non-interactive permission mode that allows only what the
    skills need (git, gh, python3, treg). Don't grant blanket permissions.
 
 ## 3. Path B: Hermes Agent
@@ -82,13 +90,15 @@ go through PRs, and its own bookkeeping goes to the state store.
    directory, keeping the folders side by side. Updating is `git pull`.
 3. **Product repo**: clone it where the agent can work in it, with the bot's GitHub token.
 4. **Messaging**: connect the gateway (Telegram, Slack, …) and set `notify.channel: "gateway"`
-   during init. The digest's "Needs you" list arrives in chat, and replies such as "approve 2" are
-   applied on the next tick.
+   during init. The digest's "Needs you" list arrives in chat. Approvals and grants you reply with in
+   chat are applied in that chat turn with your words quoted; other replies are applied on the next
+   tick.
 5. **Init in chat**: tell the agent to run the `gtm` skill in init mode for the repo. Answer its
    questions (stage, sales motion, deal size, goal, notify channel) and confirm the product context,
    claims and panel it drafts.
 6. **Heartbeat**: ask the agent to schedule one daily job that runs `gtm` in tick mode for that
-   repo (prompt in `hosts.md`). One job only; `gtm` decides what's due.
+   repo (prompt in `hosts.md`), with `MARKETING_UNATTENDED=1` in the job's environment. One job
+   only; `gtm` decides what's due.
 7. **Optional hardening**: run the free access check from CI as well (`hosts.md`), so a model or
    server outage can't hide your site becoming invisible to AI bots.
 

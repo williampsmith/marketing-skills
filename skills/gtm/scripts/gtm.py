@@ -405,8 +405,13 @@ def upgrade(s: dict) -> dict:
         cur = s["jobs"].setdefault(name, {})
         for k, v in job.items():
             cur.setdefault(k, v)
-        if cur.get("skill") in RENAMED_SKILLS or (name, cur.get("skill")) in MOVED_JOBS:
+        if cur.get("skill") in RENAMED_SKILLS:
+            cur["skill"] = RENAMED_SKILLS[cur["skill"]]
+        if (name, cur.get("skill")) in MOVED_JOBS:
             cur["skill"] = job["skill"]
+    for cur in s["jobs"].values():  # custom jobs too
+        if cur.get("skill") in RENAMED_SKILLS:
+            cur["skill"] = RENAMED_SKILLS[cur["skill"]]
     s["schema"] = SCHEMA
     return s
 
@@ -414,7 +419,11 @@ def upgrade(s: dict) -> dict:
 def load_state() -> dict:
     if not STATE().exists():
         sys.exit(f"no gtm.json in the state store ({R()}): run `gtm.py init` (gtm init mode) first")
-    return upgrade(json.loads(STATE().read_text()))
+    s = upgrade(json.loads(STATE().read_text()))
+    if (R() / "PAUSED").exists() and not s.get("paused"):
+        s["paused"] = True
+        s["paused_reason"] = (R() / "PAUSED").read_text().strip()
+    return s
 
 
 def save_state(s: dict) -> None:
@@ -1523,30 +1532,34 @@ def cmd_connect(a) -> int:
 
 # --------------------------------------------------------------------------- sending authority
 # Every channel starts at "draft": the agent writes, a human sends. "approve_to_send": the agent sends
-# exactly the drafts a human approved, within a daily cap. "bounded" arrives in a later phase.
+# exactly the drafts a human approved (by content hash), within a daily cap. "bounded" arrives later.
 SEND_CHANNELS = ("outbound", "citation_outreach", "creators", "lifecycle_email")
 LEVELS = ("draft", "approve_to_send")
 DEFAULT_AUTHORITY = {"level": "draft", "daily_cap": 20, "cooldown_days": 30}
+DRAFT_FIELDS = ("to", "subject", "body", "channel", "followup_of", "template", "segment", "key")
 
 
 def authority(s: dict, channel: str) -> dict:
     return {**DEFAULT_AUTHORITY, **(s.get("authority") or {}).get(channel, {})}
 
 
+def draft_hash(d: dict) -> str:
+    """What a human approves: the exact recipient, subject, body and routing of one draft."""
+    import hashlib
+    canon = json.dumps({k: d.get(k) for k in DRAFT_FIELDS}, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(canon.encode()).hexdigest()
+
+
 def approvals() -> list[dict]:
     return read_jsonl(R() / "approvals.jsonl")
 
 
-def approved_count(batch: str) -> int:
-    return sum(int(r["count"]) for r in approvals() if r["batch"] == batch)
+def approved_hashes(batch: str) -> set:
+    return {h for r in approvals() if r["batch"] == batch for h in r.get("hashes", [])}
 
 
 def send_log() -> list[dict]:
     return read_jsonl(R() / "sends.jsonl")
-
-
-def sent_in_batch(batch: str) -> int:
-    return sum(int(r["n"]) for r in send_log() if r["batch"] == batch)
 
 
 def sends_today(channel: str) -> int:
@@ -1554,35 +1567,59 @@ def sends_today(channel: str) -> int:
     return sum(int(r["n"]) for r in send_log() if r["channel"] == channel and r["date"] == d)
 
 
-def send_allowed(s: dict, channel: str, n: int, batch: str) -> tuple[bool, str]:
-    """May the agent send n messages of this batch now? Checked before every send."""
-    if s.get("paused"):
-        return False, "paused"
+def paused() -> bool:
+    """The kill switch: the flag in gtm.json or the PAUSED file (written without waiting for the lock)."""
+    if (R() / "PAUSED").exists():
+        return True
+    try:
+        return bool(json.loads(STATE().read_text()).get("paused"))
+    except (OSError, ValueError):
+        return True  # unreadable state: stop rather than guess
+
+
+def send_capacity(s: dict, channel: str) -> tuple[int, str]:
+    """How many messages the agent may send on a channel right now, and why not more."""
+    if paused():
+        return 0, "paused"
     auth = authority(s, channel)
-    if auth["level"] == "draft":
-        return False, f"{channel} is drafts only: a human sends, or grants approve_to_send"
-    left_today = int(auth["daily_cap"]) - sends_today(channel)
-    if n > left_today:
-        return False, f"{n} sends would pass {channel}'s daily cap of {auth['daily_cap']} ({left_today} left today)"
-    if auth["level"] == "approve_to_send":
-        left_batch = approved_count(batch) - sent_in_batch(batch)
-        if n > left_batch:
-            return False, f"batch {batch} has {left_batch} approved sends left, not {n}"
-    return True, "ok"
+    level = auth.get("level")
+    if level == "draft":
+        return 0, f"{channel} is drafts only: a human sends, or grants approve_to_send"
+    if level not in LEVELS:
+        return 0, f"unknown authority level {level!r} on {channel}"
+    left = int(auth["daily_cap"]) - sends_today(channel)
+    if left <= 0:
+        return 0, f"{channel}'s daily cap of {auth['daily_cap']} is used up"
+    return left, f"{left} of {auth['daily_cap']} left today"
 
 
-def record_send(channel: str, n: int, batch: str, key: str | None = None, cooldown_job: str | None = None) -> None:
-    """Log a send (no addresses: the batch folder holds those) and start the key's cooldown."""
+def record_send(channel: str, n: int, batch: str, key: str | None = None, cooldown_days: int | None = None) -> None:
+    """Log a send (no addresses: the batch folder holds those) and start the key's cooldown on the channel."""
     with locked():
         append_jsonl(R() / "sends.jsonl", {"date": today().isoformat(), "channel": channel, "batch": batch, "n": n})
-        if key and cooldown_job:
+        if key:
             s = load_state()
-            s.setdefault("keys", {}).setdefault(cooldown_job, {})[key] = today().isoformat()
+            s.setdefault("keys", {}).setdefault(f"send:{channel}", {})[key] = today().isoformat()
             save_state(s)
+
+
+def unattended_refusal(what: str) -> str | None:
+    if os.environ.get("MARKETING_UNATTENDED"):
+        return (f"{what} is a human decision; this run is unattended (MARKETING_UNATTENDED is set). "
+                "Ask in the digest and apply it in a run where the human is present")
+    return None
 
 
 def cmd_authority(a) -> int:
     s = load_state()
+    if a.action != "show":
+        why = unattended_refusal("granting authority")
+        if why:
+            print(why, file=sys.stderr)
+            return 1
+        if not a.quote:
+            print("--quote the human's instruction (it is stored with the grant)", file=sys.stderr)
+            return 1
     if a.action == "show":
         print(json.dumps({ch: authority(s, ch) for ch in SEND_CHANNELS}, indent=2))
         return 0
@@ -1593,7 +1630,7 @@ def cmd_authority(a) -> int:
         print(f"level is one of {', '.join(LEVELS)}", file=sys.stderr)
         return 1
     cur = authority(s, a.channel)
-    cur.update({"level": a.level, "granted": today().isoformat()})
+    cur.update({"level": a.level, "granted": today().isoformat(), "quote": a.quote})
     if a.daily_cap is not None:
         cur["daily_cap"] = a.daily_cap
     if a.cooldown_days is not None:
@@ -1605,7 +1642,15 @@ def cmd_authority(a) -> int:
 
 
 def cmd_approve(a) -> int:
-    """Apply a human's approval of a drafted batch (e.g. their digest reply "approve batch X, 12")."""
+    """Apply a human's approval of a drafted batch: the first N drafts, pinned by content hash, so a
+    draft changed after approval is no longer approved."""
+    why = unattended_refusal("approving a batch")
+    if why:
+        print(why, file=sys.stderr)
+        return 1
+    if not a.quote:
+        print("--quote the human's reply (e.g. \"approve batch acme-1, 12\")", file=sys.stderr)
+        return 1
     d = R() / "sends" / a.batch / "drafts.jsonl"
     drafts = read_jsonl(d)
     if not drafts:
@@ -1614,26 +1659,30 @@ def cmd_approve(a) -> int:
     if not 0 < a.count <= len(drafts):
         print(f"--count must be 1..{len(drafts)} (drafts in the batch)", file=sys.stderr)
         return 1
-    if approved_count(a.batch):
-        print(f"batch {a.batch} is already approved ({approved_count(a.batch)}); approvals aren't topped up",
-              file=sys.stderr)
+    if approved_hashes(a.batch):
+        print(f"batch {a.batch} is already approved; approvals aren't topped up", file=sys.stderr)
         return 1
+    hashes = [draft_hash(x) for x in drafts[:a.count]]
     append_jsonl(R() / "approvals.jsonl", {"date": today().isoformat(), "batch": a.batch, "count": a.count,
-                                           "by": a.by})
+                                           "hashes": hashes, "quote": a.quote})
     print(f"approved the first {a.count} of {len(drafts)} drafts in {a.batch}")
     return 0
 
 
 def cmd_pause(a) -> int:
-    s = load_state()
-    s["paused"] = True
-    s["paused_reason"] = a.reason
-    save_state(s)
+    # the file takes effect at once, even while another process holds the lock (e.g. mid-send)
+    atomic_write(R() / "PAUSED", (a.reason or "kill switch") + "\n")
+    with locked():
+        s = load_state()
+        s["paused"] = True
+        s["paused_reason"] = a.reason
+        save_state(s)
     print("paused: tick runs nothing until `gtm.py resume`")
     return 0
 
 
 def cmd_resume(a) -> int:
+    (R() / "PAUSED").unlink(missing_ok=True)
     s = load_state()
     s["paused"] = False
     s.pop("paused_reason", None)
@@ -1854,10 +1903,11 @@ def main() -> int:
     p.add_argument("--level")
     p.add_argument("--daily-cap", type=int)
     p.add_argument("--cooldown-days", type=int)
+    p.add_argument("--quote", help="the human's instruction, verbatim (required to grant)")
     p = sub.add_parser("approve", help="apply a human's approval of a drafted batch")
     p.add_argument("batch")
     p.add_argument("--count", type=int, required=True, help="approve the first N drafts, in file order")
-    p.add_argument("--by", default="human", help="who approved, as they signed the reply")
+    p.add_argument("--quote", help="the human's reply, verbatim (required)")
     p = sub.add_parser("pause")
     p.add_argument("--reason", default="")
     p = sub.add_parser("budget")
@@ -1937,7 +1987,7 @@ def main() -> int:
                "stage": cmd_stage, "connect": cmd_connect, "authority": cmd_authority, "approve": cmd_approve, "digest": cmd_digest, "store": cmd_store, "sync": cmd_sync,
                "migrate": cmd_migrate}[a.cmd]
     try:
-        if a.cmd in ("where", "store"):
+        if a.cmd in ("where", "store", "pause"):  # pause must never wait behind a running send
             return handler(a)
         with locked():  # one writer per store: parallel subagents each call gtm.py
             return handler(a)

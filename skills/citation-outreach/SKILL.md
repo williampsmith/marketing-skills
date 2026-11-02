@@ -92,7 +92,7 @@ Then choose **one** action per target:
 | Gov / standard / encyclopedia | **skip** pitching | cite them in your own pages instead |
 
 If many targets need something you don't have, such as benchmark data, a public test, or a free
-checker tool, propose that **linkable asset** to the user as a `content` (or a small tool). One
+checker tool, propose that **linkable asset** to the user as a `../content` page (or a small tool). One
 good asset can unlock a dozen pitches.
 
 ### 3. Find the right person (treg, verified only)
@@ -124,9 +124,9 @@ competitors fairly, and disclose in the same sentence that mentions the product.
 **Sending email pitches.** By default a human sends them. If a human has granted the
 `citation_outreach` channel approve-to-send (`gtm.py authority show`), put the email drafts in a
 batch `<state>/sends/<date>-citations/drafts.jsonl` (key = the target's domain, channel
-`citation_outreach`), list it under the digest's "Needs you", apply the human's approval with
-`gtm.py approve <batch> --count N`, and send with `../outbound/scripts/send_batch.py` (dry run
-first). Editors and press stay at per-batch approval permanently. Forum replies are always posted
+`citation_outreach`), list it under the digest's "Needs you", apply the human's approval in a
+session where they are present with `gtm.py approve <batch> --count N --quote "<their reply>"`, and
+send with `../outbound/scripts/send_batch.py` (dry run first). Editors and press stay at per-batch approval permanently. Forum replies are always posted
 by a human from their own account.
 
 ### 5. Track and measure

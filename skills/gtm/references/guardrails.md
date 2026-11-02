@@ -44,21 +44,45 @@ Channels: `outbound`, `citation_outreach`, `creators`, `lifecycle_email`. Every 
 
 | step | command | who |
 |---|---|---|
-| grant | `gtm.py authority grant <channel> --level approve_to_send --daily-cap 20 [--cooldown-days 30]` | a human, never the agent |
+| grant | `gtm.py authority grant <channel> --level approve_to_send --daily-cap 20 [--cooldown-days 30] --quote "<the human's words>"` | a human, in a session where they are present |
 | check | `gtm.py authority show` | anyone |
-| draft | write `<state>/sends/<batch>/drafts.jsonl`, one channel per batch, best first | the agent |
-| approve | the human's reply ("approve batch <id>, 12") applied as `gtm.py approve <id> --count 12`; approves the first 12 lines; a batch is approved once and never topped up | the agent applies the human's words exactly |
+| draft | write `<state>/sends/<batch>/drafts.jsonl`, one channel per batch, best first, `to` one bare address | the agent |
+| approve | `gtm.py approve <id> --count 12 --quote "<their reply verbatim>"`: pins the first 12 drafts by content hash; a batch is approved once and never topped up | applied in a human-present session |
 | send | `../outbound/scripts/send_batch.py <batch> --dry-run`, then without `--dry-run` | the agent |
 
-Before sending, `send_batch.py` asks `gtm.py`'s `send_allowed` and refuses the whole batch (exit 3)
-if the program is paused, the channel is still `draft`, the batch would pass the channel's daily cap,
-or it holds more sendable messages than were approved and not yet sent. Per message it skips
-anything already sent, any address or domain in `<state>/suppression.csv`, and any key (account
-domain) contacted on that channel inside the authority's `cooldown_days`, unless the draft is a
-follow-up in an approved sequence. Each message gets the sender's postal address and opt-out line
-from `gtm.json → sender` and a `List-Unsubscribe` header, comes from `SMTP_FROM` on the dedicated
-sending domain, and is logged to `<state>/sends.jsonl` without the address. The batch folder keeps
-addresses; nothing else does. The `bounded` step is not implemented yet (it arrives in 0.8).
+**Unattended runs can't approve or grant.** Scheduled runs set `MARKETING_UNATTENDED=1`, and
+`gtm.py approve` and `authority grant` refuse while it is set. A scheduled run that finds an
+approval or grant in the digest thread records it in `plan.md` as pending, verbatim; the next
+session with the human present (they run `/marketing:gtm`, or tell the Hermes agent in chat)
+applies it with `--quote`. The quote is stored with the approval or grant.
+
+**Approvals are pinned by content.** Each approved draft's recipient, subject, body and routing are
+hashed at approval. A draft edited, reordered or added afterwards is no longer approved.
+
+What `send_batch.py` enforces:
+
+- **Capacity.** Exit 3 when the program is paused, the channel is `draft` or at an unknown level, or
+  today's cap is used up. Otherwise it sends as many as the cap allows and leaves the rest for the
+  next run.
+- **Kill switch, per message.** `gtm.py pause` writes `<state>/PAUSED` without waiting for any lock,
+  and the batch stops before its next message.
+- **Recipients.** `to` must be exactly one bare address. Skipped: anything suppressed (an email or
+  a domain in `<state>/suppression.csv`; subdomains match), duplicates within the batch, anything
+  already sent, and any key (the account's domain) inside the channel's cooldown. The cooldown key
+  is `send:<channel>`, so each channel has its own.
+- **Follow-ups.** `followup_of` skips the cooldown only when the same address got an earlier
+  message, it has had fewer than 2 follow-ups, and it isn't in `<state>/replied.csv`.
+- **Every message** gets the sender's postal address and opt-out line (`gtm.json → sender`), a
+  `Date` and a `List-Unsubscribe` header, and comes from `SMTP_FROM` on the dedicated sending domain.
+- **Failures.** An "attempt" is logged before each send and "sent" after. A permanent rejection
+  (5xx) is logged as a bounce and added to suppression. Any other failure stops the run, and the
+  unfinished attempt is held for a human rather than resent.
+- **Where it runs.** It refuses on the `repo` backend, so contacts never land in the product repo.
+  On the `git` backend it pulls before sending and pushes right after.
+- **Personal data.** `<state>/sends.jsonl` logs counts without addresses, and cooldown keys are
+  domains. The batch folder keeps addresses; nothing else does.
+
+The `bounded` step is not implemented yet (it arrives in 0.8).
 
 These stay at approve-to-send permanently, whatever the channel's step: press and editors, named
 enterprise accounts, existing customers in a dispute, and anyone who has replied before.
@@ -76,7 +100,8 @@ Stop that line of work and notify now, don't wait for the digest, when you see:
 
 ## Kill switch
 
-`gtm.py pause --reason "<why>"` stops the program. `tick` then returns no jobs and an alert, and
+`gtm.py pause --reason "<why>"` stops the program at once: it writes `<state>/PAUSED` without
+waiting for the lock, so it lands even mid-send. `tick` then returns no jobs and an alert, and
 `gtm.py may` refuses every action, so check `may` before anything that sends or contacts someone.
 `gtm.py resume` turns it back on. The human can also pause by replying "pause" to a digest; apply it
 first thing on the next run.

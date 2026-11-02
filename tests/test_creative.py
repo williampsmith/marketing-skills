@@ -33,7 +33,7 @@ class ReviewPageTest(StoreCase):
         self.assertNotIn("<script>alert", page)
         self.assertIn('<video src="hook-01.mp4"', page)
         self.assertIn('<img src="still-02.png"', page)
-        self.assertIn("approve creative 2026-11-12-hooks: hook-01, still-02", page)
+        self.assertIn("approve creative 2026-11-12-hooks: &lt;ids&gt;", page)
         self.assertNotIn("http://", page)
         self.assertNotIn("https://", page)
 
@@ -48,3 +48,18 @@ class ReviewPageTest(StoreCase):
     def test_bad_manifest(self):
         d = self.batch([])
         self.assertEqual(self.run_cli(str(d))[0], 1)
+
+
+class ReviewPageRefusalTest(StoreCase):
+    module = review
+
+    def test_remote_files_duplicate_ids_and_bad_costs_are_refused(self):
+        d = self.base / "batch"
+        d.mkdir()
+        (d / "manifest.json").write_text(json.dumps([
+            {"id": "a", "file": "https://evil.example/x.png", "claim_row": "r", "disclosure": "AI"},
+            {"id": "a", "file": "a.png", "claim_row": "r", "disclosure": "AI"},
+            {"id": "b", "file": "../../etc/x.png", "claim_row": "r", "disclosure": "AI", "cost_usd": "lots"}]))
+        self.assertEqual(self.run_cli(str(d))[0], 1)
+        for needle in ("relative path", "duplicate id", "cost_usd"):
+            self.assertIn(needle, self.last_err)

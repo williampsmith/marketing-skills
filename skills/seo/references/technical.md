@@ -9,7 +9,7 @@ or a build step), not one page at a time.
 | `redirect` | the sitemap lists a URL that redirects | list the final URL in the sitemap instead |
 | `redirect_chain` | more than one hop to the final page | point the first URL straight at the final one |
 | `offsite` | a sitemap URL ends on another host | a misconfigured redirect or a stale sitemap entry; fix or remove |
-| `robots` | robots.txt disallows the page for Googlebot | allow it, unless it's private on purpose (then drop it from the sitemap and add it to `accepted_problems`) |
+| `robots` | robots.txt disallows the page for Googlebot | allow it, unless it's private on purpose (then drop it from the sitemap and add `"robots: <url>"` to `accepted_problems`, which `crawl_check.py` then leaves out) |
 | `noindex` | a robots meta tag or `X-Robots-Tag` header says noindex | remove it if the page should rank; staging-only noindex leaking to production is the classic cause |
 | `canonical` | the page's canonical points elsewhere | self-canonical for pages that should rank; keep it pointing elsewhere only for true duplicates |
 | `title` | missing, or over 60 characters | a specific title per page from the template; the query it targets first |

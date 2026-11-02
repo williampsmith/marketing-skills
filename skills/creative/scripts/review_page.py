@@ -54,10 +54,24 @@ def esc(x) -> str:
 
 def problems(assets: list[dict]) -> list[str]:
     out = []
+    seen = set()
     for a in assets:
+        if not isinstance(a, dict):
+            out.append(f"{a!r}: each asset is an object")
+            continue
         aid = a.get("id") or "(no id)"
         if not a.get("id"):
             out.append(f"{aid}: missing id")
+        elif aid in seen:
+            out.append(f"{aid}: duplicate id (approval is by id)")
+        seen.add(aid)
+        f = str(a.get("file") or "")
+        if "://" in f or f.startswith(("/", "\\")) or ".." in Path(f).parts:
+            out.append(f"{aid}: file must be a relative path inside the batch folder (the page loads nothing remote)")
+        try:
+            float(a.get("cost_usd") or 0)
+        except (TypeError, ValueError):
+            out.append(f"{aid}: cost_usd must be a number")
         if not str(a.get("claim_row") or "").strip():
             out.append(f"{aid}: no claim_row (every asset makes one claim from the ledger)")
         if a.get("ai_generated", True) and not str(a.get("disclosure") or "").strip():
@@ -89,7 +103,7 @@ def build(batch: str, assets: list[dict]) -> str:
             f'<dt>disclosure</dt><dd>{esc(a.get("disclosure") or "none (not AI-generated)")}</dd>'
             f'<dt>cost</dt><dd>${float(a.get("cost_usd") or 0):.2f}</dd></dl>'
             f'<pre>{esc(a.get("script"))}</pre></article>')
-    ids = ", ".join(esc(a["id"]) for a in assets[:3])
+    ids = "&lt;ids&gt;"
     return ("<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
             f"<title>Creative review {esc(batch)}</title><style>{CSS}</style><main>"
             f"<header><h1>Creative review: {esc(batch)}</h1><p class='muted'>{len(assets)} assets · "

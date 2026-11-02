@@ -195,7 +195,7 @@ class UpgradeTest(Base):
         self.run_cli("init")
         s = self.state()
         self.assertEqual(s["jobs"]["watch"]["skill"], "competitive-intel")
-        self.assertEqual(s["jobs"]["work_session"]["skill"], "gtm")
+        self.assertEqual(s["jobs"]["work_session"]["skill"], "content")
 
     def test_force_reset_keeps_history(self):
         self.run_cli("init", "--motion", "enterprise")

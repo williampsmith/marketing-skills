@@ -9,6 +9,7 @@ For every sitemap URL (following sitemap indexes) it fetches the page once and r
     metadata       missing or duplicate <title> and meta description, titles over 60 characters
     content        pages whose server-rendered HTML has under 150 words of visible text (client-only pages)
     links          internal links that 404; sitemap pages no other crawled page links to (orphans)
+Problems listed in gtm.json `accepted_problems` (as "<kind>: <url>" or the bare URL) are left out.
 Writes the problems as JSON and the metric `seo_problems` (count) unless --dry-run. Free: plain HTTP
 with a polite delay, no treg calls. Stdlib only.
 """
@@ -17,6 +18,7 @@ from __future__ import annotations
 import argparse
 import collections
 import html
+import http.client
 import json
 import re
 import sys
@@ -43,14 +45,14 @@ OPENER = urllib.request.build_opener(NoRedirect)
 
 def fetch(url: str) -> tuple[int, dict, str]:
     """One request, no redirect following (tests replace this). Returns status, headers, body."""
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
     try:
+        req = urllib.request.Request(url, headers={"User-Agent": UA})
         with OPENER.open(req, timeout=30) as r:
             return r.status, {k.lower(): v for k, v in r.headers.items()}, r.read(3_000_000).decode("utf-8", "replace")
     except urllib.error.HTTPError as e:
         return e.code, {k.lower(): v for k, v in (e.headers or {}).items()}, ""
-    except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
-        return 0, {}, str(e)
+    except (OSError, ValueError, http.client.HTTPException) as e:  # timeouts, TLS, bad URLs, truncated reads
+        return 0, {}, f"{type(e).__name__}: {e}"
 
 
 def follow(url: str, fetcher=fetch, max_hops: int = 5) -> tuple[int, str, int, dict, str]:
@@ -102,8 +104,18 @@ def _norm(u: str) -> str:
     return urllib.parse.urlunsplit((p.scheme, p.netloc.lower(), p.path.rstrip("/") or "/", p.query, ""))
 
 
-def crawl(site: str, limit: int = 300, fetcher=fetch, delay: float = 0.5) -> dict:
-    host = urllib.parse.urlsplit(site).netloc.lower()
+RISKY = re.compile(r"(log-?out|sign-?out|cart|checkout|delete|remove|unsubscribe)", re.I)
+
+
+def _site_host(h: str) -> str:
+    return h.lower()[4:] if h.lower().startswith("www.") else h.lower()
+
+
+def crawl(site: str, limit: int = 300, fetcher=fetch, delay: float = 0.5, accepted: list | None = None) -> dict:
+    # the site's real host is where its homepage ends up (apex → www and the reverse count as one site)
+    _, home_final, _, _, _ = follow(site.rstrip("/") + "/", fetcher)
+    host = _site_host(urllib.parse.urlsplit(home_final).netloc or urllib.parse.urlsplit(site).netloc)
+    accepted = set(accepted or [])
     robots = urllib.robotparser.RobotFileParser()
     rs, _, _, _, rbody = follow(site.rstrip("/") + "/robots.txt", fetcher)
     robots.parse(rbody.splitlines() if rs == 200 else [])
@@ -127,7 +139,7 @@ def crawl(site: str, limit: int = 300, fetcher=fetch, delay: float = 0.5) -> dic
             problem(url, "redirect_chain", f"{hops} hops to {final}")
         elif hops == 1:
             problem(url, "redirect", f"sitemap lists a redirecting URL → {final}")
-        if urllib.parse.urlsplit(final).netloc.lower() != host:
+        if _site_host(urllib.parse.urlsplit(final).netloc) != host:
             problem(url, "offsite", f"ends on another host: {final}")
         if status != 200:
             problem(url, "status", f"HTTP {status}")
@@ -155,7 +167,7 @@ def crawl(site: str, limit: int = 300, fetcher=fetch, delay: float = 0.5) -> dic
             problem(url, "thin_html", "under 150 words in the server-rendered HTML (client-only content?)")
         for href in re.findall(r'<a[^>]+href=["\']([^"\'#]+)', body, re.I):
             absu = urllib.parse.urljoin(final, href)
-            if urllib.parse.urlsplit(absu).netloc.lower() == host:
+            if _site_host(urllib.parse.urlsplit(absu).netloc) == host:
                 n = _norm(absu)
                 if n != _norm(final):
                     linked.add(n)
@@ -174,14 +186,18 @@ def crawl(site: str, limit: int = 300, fetcher=fetch, delay: float = 0.5) -> dic
             problem(u, "orphan", "no crawled page links here")
     broken = 0
     for link in sorted(internal_links - set(urls))[:100]:
-        if _norm(link) in sitemap_norm:
+        if _norm(link) in sitemap_norm or RISKY.search(urllib.parse.urlsplit(link).path):
             continue
+        if delay:
+            time.sleep(delay)
         status, *_ = follow(link, fetcher)
         if status in (404, 410):
             broken += 1
             problem(link, "broken_link", f"HTTP {status}, linked from the site")
-    counts = collections.Counter(p["kind"] for p in problems)
-    return {"site": site, "pages": len(urls), "problems": problems, "counts": dict(counts)}
+    kept = [p for p in problems if f"{p['kind']}: {p['url']}" not in accepted and p["url"] not in accepted]
+    counts = collections.Counter(p["kind"] for p in kept)
+    return {"site": site, "pages": len(urls), "problems": kept, "counts": dict(counts),
+            "accepted": len(problems) - len(kept)}
 
 
 def main() -> int:
@@ -192,7 +208,11 @@ def main() -> int:
     ap.add_argument("--delay", type=float, default=0.5, help="seconds between page fetches")
     ap.add_argument("--dry-run", action="store_true", help="print only; write no files or metrics")
     a = ap.parse_args()
-    out = crawl(a.site, a.limit, delay=a.delay)
+    try:
+        accepted = gtm.load_state().get("accepted_problems", [])
+    except SystemExit:
+        accepted = []
+    out = crawl(a.site, a.limit, delay=a.delay, accepted=accepted)
     if not out["pages"]:
         print(f"no URLs found in {a.site.rstrip('/')}/sitemap.xml", file=sys.stderr)
         return 1

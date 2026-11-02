@@ -1,6 +1,6 @@
 ---
 name: creative
-description: Produce marketing creative for a bet - short-form video and UGC-style hooks, product demo clips, LinkedIn document and diagram posts, static images, voiceovers - in the formats that fit the product's channels. Starts from a brief (channel, format, audience, one claim from the claims ledger), researches what works in that channel through treg (trending short-form, top LinkedIn posts, competitors' ad libraries), writes scripts and variants through the writing gates, generates through treg's image, video and voice models with the cost recorded, and builds a review page for a human. Nothing is published from this skill. Use when a work session picks a creative tactic (ugc_hooks, demo_clip, document_post, tutorial_video), or the user asks for ads, UGC, hooks, a demo video, social graphics or creative for a launch. Posting organic copy is ../social; paid placement is ../paid.
+description: Produce marketing creative for a bet - short-form video and UGC-style hooks, product demo clips, LinkedIn document and diagram posts, static images, voiceovers - in the formats that fit the product's channels. Starts from a brief (channel, format, audience, one claim from the claims ledger), researches what works in that channel through treg (trending short-form, top LinkedIn posts, competitors' ad libraries), writes scripts and variants through the writing gates, generates through treg's image, video and voice models with the cost recorded, and builds a review page for a human. Nothing is published from this skill. Use when a work session picks a creative tactic (ugc_hooks, demo_clip, document_post, tutorial_video), or the user asks for ads, UGC, hooks, a demo video, social graphics or creative for a launch. Posting organic copy is ../social; paid placement is ../paid (when installed).
 ---
 
 # Creative
@@ -53,7 +53,7 @@ the results say something. Each variant gets an id, a script, and its claim row.
 
 Use treg's generation models through the CLI, and record the spend:
 
-| asset | examples (checked 2026-11-02) |
+| asset | examples (checked 2026-11-02; verify with `catalog_get` and state the price first) |
 |---|---|
 | image | `replicate.image-gen.flux-schnell`, `minimax.image-gen.from_text` |
 | video | `replicate.video-gen.seedance-1-lite`, `replicate.video-gen.veo-3.1-fast` |
@@ -75,8 +75,12 @@ Write `<state>/creative/<batch>/manifest.json`, one entry per asset:
   "ai_generated": true, "disclosure": "AI-generated presenter", "cost_usd": 0.86}]
 ```
 
-Then `python3 scripts/review_page.py <state>/creative/<batch>`. It writes `review.html` next to the
-assets and refuses if any asset has no claim row, or is AI-generated without a disclosure. Put the
+Each `file` is a relative path inside the batch folder (never a URL or a path outside it, so the
+page loads nothing remote), and every `id` is unique, since approval is by id. Then run
+`python3 /abs/path/skills/creative/scripts/review_page.py <state>/creative/<batch>` from the product
+repo root. It writes `review.html` next to the assets and refuses if any asset has no claim row, is
+AI-generated without a disclosure, has a duplicate id, a remote or outside file, or a non-numeric
+`cost_usd`. Put the
 page path and the asset count in the digest's **Needs you**; the human replies
 "approve creative <batch>: hook-01, hook-03" and posts or uploads what they approved.
 
@@ -98,4 +102,4 @@ the brief template for the next batch; a pattern becomes a learning only through
   reviews, customers or numbers.
 - **Regulated products** (`profile.regulated` is heavy): a human reviews every asset before it's
   used anywhere, including internally.
-- **Nothing publishes from here.** Posting is a human's job, or `../paid` within its caps.
+- **Nothing publishes from here.** Posting is a human's job, or `../paid` (when installed) within its caps.

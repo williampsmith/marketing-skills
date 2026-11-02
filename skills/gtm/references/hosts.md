@@ -11,6 +11,14 @@ prompt everywhere:
 > Run the gtm skill in tick mode for the repo at <path>. Follow its "Every run" steps, respect its
 > autonomy gates, and notify per gtm.json.
 
+**Scheduled runs are unattended.** Set `MARKETING_UNATTENDED=1` in the environment of every
+scheduled run (cron, cloud routine, CI). With it set, `gtm.py` refuses `approve` and `authority
+grant`: approving a batch or granting authority is a human decision. A scheduled run that finds such
+a reply in the digest thread records it in `plan.md` as pending, verbatim. The human applies it in a
+short session where they are present: they run `/marketing:gtm` in Claude Code, or tell the Hermes
+agent in chat (a chat turn runs without the variable), and the agent applies it with `--quote "<their
+words>"`. Pausing ("pause") is never blocked and is applied on the next run of either kind.
+
 ## Where the state lives
 
 `<state>` is the directory `gtm.py where` prints. The product repo only receives PRs; the program's
@@ -44,21 +52,24 @@ skills directory, keeping the skills side by side. Then:
 - If a human has granted a channel approve-to-send, the environment also needs the dedicated
   sending inbox: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` (see
   `../outbound/references/deliverability.md`). Leave them out and every channel stays drafts only.
-- Create the cron job with Hermes's scheduler, using the prompt above, daily. Cron jobs persist in the
+- Create the cron job with Hermes's scheduler, using the prompt above, daily, with
+  `MARKETING_UNATTENDED=1` in the job's environment (chat turns run without it). Cron jobs persist in the
   agent's data directory (e.g. `/opt/data/cron/` in the Docker image). If you manage agents
   declaratively, keep the job definition in that config like the rest of the agent's setup.
-- Set `notify.channel: "gateway"` in gtm.json. The digest's "Needs you" goes to the agent's chat,
-  and your replies ("approve 1, 3") are applied on the next tick.
+- Set `notify.channel: "gateway"` in gtm.json. The digest's "Needs you" goes to the agent's chat.
+  Approvals and grants you reply with in chat are applied in that chat turn, with your words quoted;
+  everything else is applied on the next tick.
 - Long skills (content pages, outreach triage) can be split across the agent's subagents. Give each one
   the job recipe and the gates, never the whole program.
 
 ## Claude Code
 
 - Cloud: `/schedule` a daily routine with the prompt above on the product repo. Add
-  `MARKETING_STATE=<state repo git URL>`, the treg token, the PostHog variables and, if a channel may send, the SMTP variables as environment secrets, and give the
+  `MARKETING_STATE=<state repo git URL>`, `MARKETING_UNATTENDED=1`, the treg token, the PostHog variables and, if a channel may send, the SMTP variables as environment secrets, and give the
   routine write access to the state repo. The skill's "Every run" steps pull and push it.
-- Own server: cron runs Claude Code headless in the product repo once a day. The `dir` backend is
-  enough.
+- Own server: cron runs Claude Code headless in the product repo once a day, with
+  `MARKETING_UNATTENDED=1`. The `dir` backend is enough. Approvals and grants happen in an
+  interactive session (`/marketing:gtm`).
 - Local: `/loop` works only while a session is open, so use it for a supervised week, not production.
 
 ## CI (GitHub Actions) — the jobs that need no model
@@ -78,6 +89,7 @@ jobs:
     env:
       SITE: "https://example.com"
       MARKETING_STATE: ${{ github.workspace }}/state
+      MARKETING_UNATTENDED: "1"
     steps:
       - uses: actions/checkout@v4
         with: {path: product}

@@ -1,6 +1,6 @@
 ---
 name: social
-description: Draft organic social posts and community answers from what the product already has - launches, new pages, closed bets and real customer questions - for a human to post. One idea per post, built on its single most useful point, written to each channel's conventions (LinkedIn, X, Reddit and other communities). Never posts, replies, votes or creates accounts on its own. Measures engagement and clicks after a human posts. Use when a work session picks a social tactic (founder_posts, community_answers), after a launch or a new page ships, or when the user asks for LinkedIn posts, a thread, Reddit answers, community engagement or a social calendar. Visual assets come from ../creative; paid placement from ../paid.
+description: Draft organic social posts and community answers from what the product already has - launches, new pages, closed bets and real customer questions - for a human to post. One idea per post, built on its single most useful point, written to each channel's conventions (LinkedIn, X, Reddit and other communities). Never posts, replies, votes or creates accounts on its own. Measures engagement and clicks after a human posts. Use when a work session picks a social tactic (founder_posts, community_answers), after a launch or a new page ships, or when the user asks for LinkedIn posts, a thread, Reddit answers, community engagement or a social calendar. Visual assets come from ../creative; paid placement from ../paid (when installed).
 ---
 
 # Social

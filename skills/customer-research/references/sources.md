@@ -10,14 +10,15 @@ exist, and use the CLI (`treg --json call …`) for batches so results stay out 
 | `linkedin` | "linkedin search posts by keyword" | `anyapi.linkedin.search.posts`, `harvestapi.linkedin.post.search` | $0.002-0.004 | practitioners and buyers in B2B roles posting about the problem |
 | `tiktok` | "tiktok search videos by keyword" | `treg.tiktok.search.videos` (routed) | about $0.001 | consumer and creator demand; check who posts, not just views |
 | `youtube` | "youtube search videos" | `treg.youtube.search.videos` (routed) | about $0.001 | tutorials and reviews people watch before choosing |
-| `x` (map to `creators` or skip) | "twitter x search tweets" | `treg.x.search.posts` (routed) | under $0.001 | developer and founder chatter |
+| `x` (counts toward `linkedin_organic`) | "twitter x search tweets" | `treg.x.search.posts` (routed) | under $0.001 | developer and founder chatter |
 | `hackernews` | "search hacker news" | `crawl4ai.hackernews.search.stories` | under $0.001 | developer tools and infrastructure |
 | `g2`, `capterra` | not in the catalog on 2026-11-02 | read public pages with `treg.web.extract` (free) when they render | free | review volume and recurring complaints per alternative |
 | `press` | news search | `treg.web.search.news` | cents | coverage of the problem and the category |
 | `search` | "keyword search volume" | `treg.google.keywords.volume` (routed) | under $0.002 per keyword | whether people search for the problem at all |
 
-`x` has no channel of its own in `channel-fit.json`. Use its results for customer language, and
-record it under `creators` only when the relevant posts come from people with an audience in the ICP.
+`x` has no channel of its own in `channel-fit.json`. `attention.py` maps it to `linkedin_organic`
+(founder-led social): record X under the `x` source key and it counts toward that channel. Its results
+are also good for customer language.
 Trustpilot (`dataforseo.x.business-data-trustpilot-reviews-task-post`, async) is useful for
 consumer products' review patterns.
 

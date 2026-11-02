@@ -125,6 +125,31 @@ def query_map(root: Path) -> set[str]:
         return {r["query"].strip().lower() for r in csv.DictReader(f) if r.get("query")}
 
 
+def update_query_map(root: Path, positions: dict) -> None:
+    """Write each mapped query's average position and today's date back into the seo query map."""
+    p = root / "seo" / "queries.csv"
+    if not positions or not p.exists():
+        return
+    with p.open(newline="") as f:
+        reader = csv.DictReader(f)
+        fields = list(reader.fieldnames or [])
+        rows = list(reader)
+    for col in ("position", "last_checked"):
+        if col not in fields:
+            fields.append(col)
+    for r in rows:
+        q = (r.get("query") or "").strip().lower()
+        if q in positions:
+            r["position"] = positions[q]
+            r["last_checked"] = dt.date.today().isoformat()
+    tmp = p.with_suffix(".csv.tmp")
+    with tmp.open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        w.writerows(rows)
+    tmp.replace(p)
+
+
 def measure(site: str, site_url: str, brands: list[str], days: int, call=treg_call, sitemap=fetch_sitemap_urls) -> dict:
     start, end = window(days)
     total = rows_of(call(site, {"startDate": start, "endDate": end}))
@@ -141,9 +166,11 @@ def measure(site: str, site_url: str, brands: list[str], days: int, call=treg_ca
         denom = len(pool)
         basis = "non-brand queries with 10+ impressions"
     top10 = sum(1 for r in pool if r.get("position", 99) <= 10)
+    positions = {r["keys"][0].lower(): round(r.get("position", 0), 1) for r in pool} if mapped else {}
     out = {"window": [start, end], "search_clicks_28d": clicks,
            "nonbrand_clicks_28d": int(sum(r.get("clicks", 0) for r in nonbrand)) if clicks is not None else None,
-           "query_top10_share": round(top10 / denom, 4) if denom else None, "top10_basis": basis}
+           "query_top10_share": round(top10 / denom, 4) if denom else None, "top10_basis": basis,
+           "_positions": positions}
     if site_url:
         urls = sitemap(site_url)
         if urls:
@@ -178,6 +205,7 @@ def main() -> int:
         print(f"search console: {e}", file=sys.stderr)
         return 1
     if not a.dry_run:
+        update_query_map(gtm.R(), out.pop("_positions", {}))
         for m in ("search_clicks_28d", "nonbrand_clicks_28d", "query_top10_share", "indexed_ratio"):
             if out.get(m) is not None:
                 gtm.metric_add(m, out[m], source="search-console", track="demand")

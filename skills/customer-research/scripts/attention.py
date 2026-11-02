@@ -37,6 +37,7 @@ SOURCE_CHANNEL = {
     "youtube": "long_video",
     "creators": "creators", "newsletters": "creators", "podcasts": "creators",
     "press": "pr",
+    "x": "linkedin_organic",  # founder-led social; the matrix has no separate X channel
     "search": "seo_content",
 }
 MIN_SAMPLED = 15
@@ -51,7 +52,14 @@ def weights(evidence: dict) -> dict:
         if ch is None:
             unmeasured[src] = "unknown source (not mapped to a channel)"
             continue
-        n, r = int(e.get("sampled", 0)), int(e.get("relevant", 0))
+        try:
+            n, r = int(e.get("sampled", 0)), int(e.get("relevant", 0))
+        except (TypeError, ValueError, AttributeError):
+            unmeasured[src] = "sampled and relevant must be whole numbers"
+            continue
+        if r < 0 or r > n:
+            unmeasured[src] = f"relevant ({r}) must be between 0 and sampled ({n})"
+            continue
         if n < MIN_SAMPLED:
             unmeasured.setdefault(ch, f"only {n} results sampled on {src}")
             continue
