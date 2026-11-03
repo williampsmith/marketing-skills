@@ -148,6 +148,8 @@ Skipped jobs (missing connection, ineligible channel, track off) go in the diges
 | `tracking_check` | `../measurement`: `posthog.py tracking-check` → record. Exit 1 (no events in 2 days) is an alert: notify now. |
 | `metrics_sync` | `../measurement`: `posthog.py sync` (send the outbox, pull funnel counts and queries) → record. |
 | `search_console` | `../measurement`: `search_console.py` (stored property) → record; exit 1 means an error, nothing written. |
+| `news_watch` | `../news`: `news_watch.py sweep --max-usd 0.10` → `record news_watch --cost <cost_usd>`. Exit 1 (every search failed) is an alert. Skipped until `<state>/news.json` exists: set it up with the human (news skill, "Set up"). New candidates trigger `news_act`. |
+| `news_act` | `../news`: read up to 3 queued stories, decide refresh, react, pitch or skip (`news_watch.py decide`), produce the drafts or PR → `record news_act --event <event>`. |
 | `monthly_report` | `../measurement`: `report.py` → link the scorecard in the digest → record. |
 | `seo_crawl` | `../seo`: `crawl_check.py <site_url>` → record. New `noindex`, `status`, `robots` or `canonical` problems on key paths are alerts; the rest go to the backlog for work sessions. Deliberate ones go in `accepted_problems` as `"<kind>: <url>"`. |
 | `outbound_signals` | `../outbound` steps 1-3: sweep the plan's signals, `gtm.py may outbound_signals <domain>` per account, research packs, verified contacts, drafts into a batch → `record outbound_signals --key <domain>` per account drafted, with `--cost`. The batch goes in "Needs you"; nothing is sent this run. |

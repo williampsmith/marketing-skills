@@ -129,6 +129,12 @@ session where they are present with `gtm.py approve <batch> --count N --quote "<
 send with `../outbound/scripts/send_batch.py` (dry run first). Editors and press stay at per-batch approval permanently. Forum replies are always posted
 by a human from their own account.
 
+**News pitches** (from `../news`, decision `pitch`): the target is the journalist whose byline is on
+the story, and the window is the story's `pitch_by`. Offer what the coverage lacks: an explanation
+of the mechanism, a demonstration, data, or an expert on the record. Three or four sentences, no
+attachment, no product pitch beyond one line saying who you are. Same draft and approval path as
+any press pitch.
+
 ### 5. Track and measure
 
 - Update `targets.json` status (`triaged → drafted → sent → landed | declined | skip`) and
