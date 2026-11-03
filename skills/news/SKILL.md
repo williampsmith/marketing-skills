@@ -38,13 +38,16 @@ python3 <plugin>/skills/news/scripts/news_watch.py init \
 
 - **queries** are what's searched; **terms** are the category's words (a story needs one to count);
   **signals** are the phrases that make a story ours and score highest; **exclude** removes false
-  friends. Terms and signals match at the start of a word with any ending, so `redact` covers
-redacted, redaction and redactions. That example is for a redaction tool: "redactions" in the news often means
-  information withheld on purpose, which isn't a failure, so the signals do the separating.
-- Add `--source x` when buyers argue about the problem on X (replies and posts under
-  `x_min_engagement` interactions are dropped, and posts rank below reporting); add `--source courtlistener` with
-  `--court-query '"inadvertently filed" unredacted'` style queries for court-record signals
-  (errata, corrected redacted versions, motions to seal or strike).
+  friends (unless the story also carries a signal). Terms and signals match at the start of a word
+  with any ending, so `redact` covers redacted, redaction and redactions. That example is for a
+  redaction tool: "redactions" in the news often means information withheld on purpose, which
+  isn't a failure, so the signals do the separating.
+- `init` extends the existing config, so you can run it again later. `--source` adds a source and
+  `--drop-source` removes one.
+- Run `init --source x` when buyers argue about the problem on X. Replies, reposts and posts under
+  `x_min_engagement` interactions are dropped, mentions are masked, and posts rank below reporting.
+- Run `init --source courtlistener` with `--court-query '"inadvertently filed" unredacted'`-style
+  queries for court-record signals (errata, corrected redacted versions, motions to seal or strike).
 - `python3 news_watch.py sweep --dry-run` prints every planned search and the worst-case cost. Show
   it to the human before the first real sweep.
 
@@ -55,11 +58,14 @@ redacted, redaction and redactions. That example is for a redaction tool: "redac
    older than `max_age_days`, scores the rest and queues those at or above `min_score` in
    `<state>/news/candidates.jsonl`. The report is `<state>/news/<date>.md`.
 2. `gtm.py record news_watch --cost <cost_usd>`.
-3. Exit 1 means every search failed: alert in the digest ("news watch is broken"), don't read it as
-   a quiet week. Individual errors are listed in the report.
+3. Exit 1 means nothing worked: every search failed, a provider's answer changed shape, or the
+   budget let nothing run. Alert in the digest ("news watch is broken"); don't read it as a quiet
+   week. Individual errors are listed in the report. A call whose charge treg doesn't report, or that
+   fails, counts at its ceiling (`reserved_usd`), so the cap holds either way.
 
 Scores are deterministic (signals, terms, recency, how many outlets, engagement) and explained in each
-row's `why`. They rank; they don't decide. You decide in `news_act`.
+row's `why`. They rank; they don't decide. You decide in `news_act`. A story that scored too low is
+scored again on later sweeps, so one that more outlets pick up can still make the queue.
 
 ## `news_act` (when new candidates are queued)
 
@@ -77,7 +83,13 @@ A headline match is a lead, not a fact. Then decide, in this order of value:
 | `skip` | anything else, including namesakes and stories where the only honest angle is "buy our product" | nothing |
 
 Record each: `python3 news_watch.py decide <id> --as refresh --page <slug>` (or `react`, `pitch`,
-`skip`, with `--note`). Then `gtm.py record news_act --event <the job's event>` so the job doesn't
+`skip`, with `--note`).
+
+- If reading the story shows it involves deaths, victims, children, abuse or similar and the sweep
+  didn't flag it, add `--sensitive`. The flag only ever goes on, and it stays even if the decision is
+  refused.
+- An undated candidate (`react_by` empty) has no react or pitch window until you read its date from
+  the story and pass `--published YYYY-MM-DD`. Then `gtm.py record news_act --event <the job's event>` so the job doesn't
 come back until the next sweep queues more.
 
 A `react` or `pitch` after its window is refused: a late reaction is worse than none. Use the

@@ -12,14 +12,16 @@ relying on them, and update this table when they move.
 | `courtlistener` | federal court filings (RECAP documents) with full-text search | CourtListener REST v4 `/search/?type=rd`, `Authorization: Token …` | free with an account | court-record signals before or without press coverage |
 
 Every treg call carries `X-Treg-Route-Max-Cost` (the script sets it per source) and the sweep stops
-before `--max-usd`. A routed call reports what it was charged; the sweep sums those.
+before `--max-usd`. A routed call reports what it was charged and the sweep sums those; a call
+with no reported charge, or one that fails, counts at its ceiling.
 
 ## What the script keeps
 
 - Title, URL, outlet, publication date, a 500-character snippet, the query that found it, and an
   engagement count where the source has one (Hacker News points plus comments; X likes, reposts,
   replies and quotes).
-- **No author names or handles.** X posts are stored as `https://x.com/i/status/<id>`. Journalists'
+- **No author names or handles.** X posts are stored as `https://x.com/i/status/<id>`, replies and
+  reposts are dropped, and `@mentions` in the text are masked as `@user`. Journalists'
   names come from the article byline when a pitch is drafted, and live in `<state>/outreach/` like
   other contacts.
 
