@@ -37,6 +37,9 @@ the loop and `docs/design/growth-operator.md` for the design being implemented.
   assets without a claim row or an AI disclosure), `skills/experiments/scripts/stats.py` (sample
   size, run length, two-proportion z-test, holdout arithmetic; `tests/test_experiments.py` checks
   it against textbook values and against gtm.py's own z-test).
+  `skills/news/scripts/news_watch.py` (current-events sweep through treg plus optional CourtListener:
+  dedupe, deterministic scoring, shelf lives, sensitive-story gate; `tests/test_news.py` replaces
+  `run_treg` and `http_get_json` and must stay offline).
   `skills/lifecycle/` and `skills/paid/` are prose only: lifecycle sends through
   `send_batch.py` (channel `lifecycle_email`), paid gates spend through `gtm.py spend check|log`.
   Sending and spend authority (`authority`, `approve`, `outcome`, `spend`, `track`; levels draft,
@@ -65,7 +68,7 @@ the loop and `docs/design/growth-operator.md` for the design being implemented.
   `posthog-outbox.jsonl`, `plan.md`, `digests/`, `access/`, `watch/`, `watch.json`, `outreach/`,
   `competitors/`, `entity/`, `launches/`, `seo/`, `research/`, `outbound/accounts/`,
   `sends/<batch>/`, `sends.jsonl`, `approvals.jsonl`, `outcomes.jsonl`, `ad-spend.jsonl`,
-  `suppression.csv`, `lifecycle/<flow>/`, `paid/`, `creative/<batch>/`, `social/`. Keep those names stable across skills. Scripts resolve the
+  `suppression.csv`, `lifecycle/<flow>/`, `paid/`, `creative/<batch>/`, `social/`, `news.json`, `news/`. Keep those names stable across skills. Scripts resolve the
   directory through `marketing_state.state_root()`; skill prose writes `<state>/…`. The product repo
   only receives PRs.
 - treg: skills describe jobs and give **dated example** endpoint ids, always with "verify with

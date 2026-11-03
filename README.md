@@ -82,7 +82,8 @@ into which tactics get tried next. A result becomes a learning only after a huma
 | `experiments` | Picks A/B, holdout, staggered or before/after from the traffic (`stats.py`), fixes the metric first, checks sample ratio, closes bets from real counts | free |
 | `lifecycle` | Onboarding, trial, dunning, a fair cancel flow, win-back, referrals and review requests, as templates, PRs or drafts for the email platform; judged against holdouts | free |
 | `paid` | Off until a human turns it on. Read-only audits (tracking, waste, structure, payback), competitor ad research, proposals; budget changes only under granted caps | free audits; ~$0.01 per competitor ad lookup |
-| `social` | Organic posts and community answers drafted from launches, pages and bets, for a human to post | free |
+| `social` | Organic posts and community answers drafted from launches, pages, bets and news, for a human to post | free |
+| `news` | Watches current events in the category (news, Google News, Hacker News, X, optionally court filings) through treg, scores and queues stories, and turns the good ones into page refreshes, timely posts or press pitches | ~$0.01-0.05 per sweep |
 
 ### Where the data lives
 

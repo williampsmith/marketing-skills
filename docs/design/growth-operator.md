@@ -498,6 +498,7 @@ anomalies, and named enterprise accounts.
 | experiments | new | test design, sample size, PostHog flags; bet close |
 | lifecycle | new | email flows, churn and cancel flows, referrals |
 | paid | new | read-only audits first, then capped changes |
+| news | new (0.9) | current events in the category: a scored queue feeding page refreshes, timely posts and press pitches |
 
 ## 13. Phases
 
@@ -511,6 +512,7 @@ run in CI against a fixture repo.
 | 3 · demand | 0.6 | `customer-research`, `competitive-intel`, `seo`, `outbound` (drafts, then approve-to-send), `creative`, `social`, `content` rename | attention scores come from data; one creative asset goes from brief to review page to measured |
 | 4 · conversion | 0.7 | `cro`, `activation`, `experiments` with PostHog flags | an A/B test runs end to end as a PR plus flag |
 | 5 · send and spend | 0.8+ | `lifecycle`, `paid`, bounded authority | a capped send and a capped budget change run with the kill switch tested |
+| 6 · news | 0.9 | `news`: a treg-based sweep (news, Google News, Hacker News, X; CourtListener optional), `news_watch` and `news_act` jobs, shelf lives, sensitive-story rule | a sweep queues a fresh story once, a stale reaction is refused, and a sensitive story can't become a post unattended |
 
 ## 14. Migration from 0.3
 
