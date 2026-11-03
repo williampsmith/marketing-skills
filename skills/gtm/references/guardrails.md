@@ -154,6 +154,19 @@ Stop that line of work and notify now, don't wait for the digest, when you see:
 - Something that would delete data or contact a large audience at once.
 - A dirty tree, a failed `git pull` or `gtm.py sync pull`, or an exhausted budget.
 
+## Current events
+
+Using the news (the `news` skill) is tier 1 up to the draft, like any other draft. On top of that:
+
+- A reaction or pitch after the story's window (`react_by`, `pitch_by`) is refused; a late reaction
+  reads as opportunism. Use the story as a page refresh instead.
+- Stories flagged `sensitive` (deaths, victims, children, abuse and similar) feed only a refresh
+  that explains the mechanism, unless a human approves the reaction or pitch with their words quoted.
+  Unattended runs can't approve it.
+- Explain how something happened; never quote, link to or reproduce leaked or exposed content.
+- Only failures already public or acknowledged in the record. Never search other people's
+  documents for new ones.
+
 ## Kill switch
 
 `gtm.py pause --reason "<why>"` stops the program at once: it writes `<state>/PAUSED` without

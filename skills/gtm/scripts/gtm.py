@@ -45,6 +45,7 @@ from __future__ import annotations
 import argparse
 import copy
 import datetime as dt
+import hashlib
 import json
 import os
 import random
@@ -170,6 +171,12 @@ DEFAULT_JOBS = {
         "acts_when": "an account matching the ICP shows a buying signal and is outside its cooldown",
         "self_check": "the signal is recent and about the problem we solve; the contact is the right role",
         "stop": "drafts into a batch for approval; suppressed or cooled-down accounts are skipped"},
+    "news_watch": {
+        "every_days": 2, "usd": 0.1, "stages": ["prelaunch", "launched"], "skill": "news",
+        "track": "discoverability", "kind": "sensor", "requires": ["file:news.json"],
+        "acts_when": "a story in the category is new, recent and scores at or above news.json's min_score",
+        "self_check": "a story counts only if it is about the problem we solve, not a namesake (read it before acting)",
+        "stop": "queue only; acting is news_act's job. Every source failing is an alert, not a quiet week"},
     "panel_review": {
         "every_days": 90, "usd": 0.0, "stages": ["launched"], "skill": "ai-visibility-audit",
         "track": "discoverability", "kind": "review",
@@ -1151,6 +1158,8 @@ def requirement_unmet(s: dict, req: str, fits: dict | None) -> str | None:
         return f"track {name} is off"
     if kind == "profile" and not s["profile"].get("confirmed"):
         return "the GTM profile isn't confirmed yet"
+    if kind == "file" and not (R() / name).exists():
+        return f"<state>/{name} doesn't exist yet (see the {name.split('.')[0]} skill's setup)"
     return None
 
 
@@ -1201,6 +1210,22 @@ def due(s: dict, fits: dict | None = None) -> tuple[list[dict], list[dict], list
             jobs.append({"job": "comparison_refresh", "why": f"watched pages changed ({stamp})",
                          "skill": "comparison-pages", "usd": 0.05, "event": stamp, "track": "discoverability",
                          "kind": "improvement"})
+    news = [c for c in read_jsonl(root / "news" / "candidates.jsonl") if c.get("status") == "new"]
+    nwj = s["jobs"].get("news_watch", {})
+    news_on = (nwj.get("enabled", True) is not False and stage in nwj.get("stages", ["launched"])
+               and s["tracks"].get(nwj.get("track", "discoverability"), {}).get("enabled", True))
+    if news and news_on:
+        # the set of waiting ids, so a second sweep on the same day still brings the job back
+        ids = sorted(c["id"] for c in news)
+        stamp = f"{max(c['found'] for c in news)}:{len(ids)}:{hashlib.sha1(' '.join(ids).encode()).hexdigest()[:8]}"
+        if stamp != (s.get("events") or {}).get("news_act"):
+            live = [c for c in news if not c.get("pitch_by") or c["pitch_by"] >= t.isoformat()]
+            jobs.append({"job": "news_act", "why": f"{len(news)} news candidates waiting ({len(live)} still timely)",
+                         "skill": "news", "usd": 0.0, "event": stamp, "track": "discoverability",
+                         "kind": "improvement", "max_actions": 3,
+                         "acts_when": "a candidate fits a page, a post or a pitch the human would sign",
+                         "self_check": "read the story itself; describe the mechanism, never repeat leaked content",
+                         "stop": "drafts and PRs only; sensitive stories only as refreshes unless a human approves"})
     for b in bets():
         if b["status"] == "open" and _date(b["check"]) <= t:
             jobs.append({"job": "bet_close", "why": f"bet {b['id']} reached its check date {b['check']}",
