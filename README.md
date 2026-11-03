@@ -46,10 +46,10 @@ assistants, so it keeps a share of the work until it reaches `preferred`.
 flowchart TD
     A["Daily scheduler<br/>(Hermes cron, /schedule, CI)"] --> B["gtm skill, tick mode"]
     B --> C["gtm.py decides:<br/>focus, due jobs, budget,<br/>cooldowns, bets past their check date"]
-    C --> D["Run due jobs<br/>audit · access check · page watch · outreach refresh<br/>and, weekly, the work session: 2 actions, each a bet"]
+    C --> D["Run due jobs<br/>audit · access check · page watch · news watch · metrics sync<br/>outreach refresh · news stories worth acting on<br/>and, weekly, the work session: 2 actions, each a bet"]
     D --> E["Metrics and audit scores<br/>written to the state store"]
     D --> F
-    F["Outputs<br/>PRs for pages and site changes<br/>drafts for outreach and profiles"]
+    F["Outputs<br/>PRs for pages and site changes<br/>drafts for outreach, posts, pitches and profiles"]
     D --> G["Digest in the state store<br/>'Needs you' list sent to chat or GitHub"]
     F --> G
     G --> H["Human merges PRs,<br/>sends drafts, approves proposals"]

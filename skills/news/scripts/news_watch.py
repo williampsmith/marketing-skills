@@ -64,8 +64,12 @@ ENDPOINTS = {  # checked 2026-11-02
 CALL_CEILING_USD = {"news": 0.01, "google_news": 0.005, "hackernews": 0.002, "x": 0.005, "courtlistener": 0.0}
 COURTLISTENER = "https://www.courtlistener.com/api/rest/v4/search/"
 DECISIONS = ("refresh", "react", "pitch", "skip")
-SENSITIVE = ("died", "death", "dead", "killed", "murder", "suicide", "victim", "victims", "survivor", "survivors", "shooting",
-             "assault", "abuse", "child", "children", "minor", "minors", "overdose", "funeral", "trafficking")
+# Sensitive vocabulary. Stems match any word ending ("abus" → abuse, abused, abusive); short words match
+# exactly so "die" doesn't catch "diesel" or "minor" "minority".
+SENSITIVE_STEMS = ("death", "murder", "suicid", "victim", "survivor", "shooting", "assault", "abus", "child",
+                   "traffick", "overdos", "funeral", "sexual", "molest", "teenager", "harass", "stalk")
+SENSITIVE_WORDS = ("die", "dies", "died", "dying", "dead", "kill", "kills", "killed", "killing", "rape", "raped",
+                   "rapes", "raping", "kid", "kids", "teen", "teens", "girl", "girls", "boy", "boys", "minor", "minors")
 DEFAULT_CONFIG = {
     "queries": [], "terms": [], "signals": [], "exclude": [],
     "sources": ["news", "google_news", "hackernews"],
@@ -100,6 +104,9 @@ def load_config() -> dict:
         raise SystemExit("news.json has no queries: add some with `news_watch.py init --query …`")
     if not c["terms"] and not c["signals"]:
         raise SystemExit("news.json needs terms or signals, or every story would score zero")
+    if not plan(c):
+        raise SystemExit("news.json plans no searches: queries need a source other than courtlistener, "
+                         "court_queries need the courtlistener source")
     return c
 
 
@@ -113,8 +120,9 @@ def parse_date(x) -> dt.date | None:
     if x is None or x == "":
         return None
     if isinstance(x, (int, float)):
+        x = float(x) / 1000 if float(x) > 1e11 else float(x)  # epoch milliseconds
         try:
-            return dt.datetime.fromtimestamp(float(x), dt.timezone.utc).date()
+            return dt.datetime.fromtimestamp(x, dt.timezone.utc).date()
         except (OverflowError, OSError, ValueError):
             return None
     s = str(x).strip()
@@ -128,15 +136,28 @@ def parse_date(x) -> dt.date | None:
         return email.utils.parsedate_to_datetime(s).date()
     except (TypeError, ValueError, IndexError):
         pass
-    for fmt in ("%b %d, %Y", "%B %d, %Y", "%d %b %Y", "%m/%d/%Y"):
+    m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", s)  # US month/day/year, with or without a time after it
+    if m:
         try:
-            return dt.datetime.strptime(s, fmt).date()
+            return dt.date(int(m.group(3)), int(m.group(1)), int(m.group(2)))
+        except ValueError:
+            return None
+    plain = re.sub(r"(?<=[A-Za-z])\.", "", s)  # "Sep. 5, 2026"
+    for fmt in ("%b %d, %Y", "%B %d, %Y", "%d %b %Y", "%d %B %Y"):
+        try:
+            return dt.datetime.strptime(plain, fmt).date()
         except ValueError:
             pass
-    m = re.match(r"(\d+)\s+(minute|hour|day|week|month)s?\s+ago", s, re.I)
+    low = s.lower()
+    if low in ("today", "just now"):
+        return gtm.today()
+    if low == "yesterday":
+        return gtm.today() - dt.timedelta(days=1)
+    m = re.match(r"(an?|\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago", s, re.I)
     if m:
-        n, unit = int(m.group(1)), m.group(2).lower()
-        days = {"minute": 0, "hour": 0, "day": 1, "week": 7, "month": 30}[unit] * n
+        n = 1 if m.group(1).lower() in ("a", "an") else int(m.group(1))
+        unit = m.group(2).lower()
+        days = {"second": 0, "minute": 0, "hour": 0, "day": 1, "week": 7, "month": 30, "year": 365}[unit] * n
         return gtm.today() - dt.timedelta(days=days)
     return None
 
@@ -202,10 +223,12 @@ def normalize(source: str, out, query: str) -> list[dict]:
     elif source == "x":
         for r in out.get("posts") or []:
             pid = str(r.get("id") or "")
-            text = _s(r.get("text"))
-            if not pid.isdigit() or r.get("isReply") or text.lstrip().startswith("@"):
-                continue  # replies are conversation, not news
-            # no author names or handles are kept: the post id is enough to open it
+            text = _s(r.get("text")).strip()
+            if (not pid.isdigit() or r.get("isReply") or r.get("isRetweet") or r.get("retweeted_status")
+                    or text.startswith("@") or re.match(r"RT\s+@", text)):
+                continue  # replies and reposts are conversation, not news
+            # no author names or handles are kept: the post id is enough to open it, and mentions are masked
+            text = re.sub(r"(?<!\w)@\w{1,15}", "@user", text)
             rows.append(_row(source, text[:140], f"https://x.com/i/status/{pid}", "X",
                              r.get("createdUtc") or r.get("createdAt") or r.get("created_at"), text,
                              engagement=sum(int(r.get(k) or 0) for k in ("likeCount", "retweetCount", "replyCount", "quoteCount")),
@@ -250,7 +273,7 @@ def treg_call(endpoint: str, body: dict, ceiling: float) -> tuple[dict, float]:
     micro = (d.get("_treg") or {}).get("charged_micro")
     if micro is None and isinstance(res, dict):
         micro = (res.get("_treg") or {}).get("charged_micro")
-    return out, (micro or 0) / 1_000_000
+    return out, (None if micro is None else micro / 1_000_000)
 
 
 def http_get_json(url: str, headers: dict) -> dict:
@@ -268,6 +291,17 @@ def courtlistener(query: str, since: dt.date) -> dict:
     return http_get_json(COURTLISTENER + "?" + urllib.parse.urlencode(params), {"Authorization": f"Token {token}"})
 
 
+# The list each source's answer must carry. Missing means the provider's shape changed: an error, not "no news".
+EXPECTED = {"news": ("results",), "google_news": ("results",), "hackernews": ("rows", "results"),
+            "x": ("posts",), "courtlistener": ("results",)}
+
+
+def check_shape(source: str, out) -> None:
+    if not isinstance(out, dict) or not any(isinstance(out.get(k), list) for k in EXPECTED[source]):
+        keys = ", ".join(sorted(out)[:8]) if isinstance(out, dict) else type(out).__name__
+        raise RuntimeError(f"unexpected response shape (no {' or '.join(EXPECTED[source])}; got {keys})")
+
+
 def body_for(source: str, q: str) -> dict:
     if source == "hackernews":
         return {"query": q}
@@ -277,12 +311,19 @@ def body_for(source: str, q: str) -> dict:
 
 
 # --------------------------------------------------------------------------- scoring
-def score(c: dict, cfg: dict, coverage: int) -> tuple[float, list[str], bool]:
+def is_sensitive(text: str, cfg: dict) -> bool:
+    text = text.lower()
+    return (any(phrase_in(text, w) for w in (*SENSITIVE_STEMS, *cfg.get("sensitive_extra", [])))
+            or any(word_in(text, w) for w in SENSITIVE_WORDS))
+
+
+def score(c: dict, cfg: dict, coverage: int, group_text: str = "") -> tuple[float, list[str], bool]:
     text = f"{c['title']} {c['snippet']}".lower()
     why = []
-    if any(phrase_in(text, x) for x in cfg["exclude"]):
-        return 0.0, ["excluded phrase"], False
     sig = [x for x in cfg["signals"] if phrase_in(text, x)]
+    # an exclusion removes a false friend; a story that also carries a signal is ours anyway
+    if not sig and any(phrase_in(text, x) for x in cfg["exclude"]):
+        return 0.0, ["excluded phrase"], False
     terms = [x for x in cfg["terms"] if phrase_in(text, x)]
     if not sig and not terms:
         return 0.0, ["no category term"], False
@@ -308,7 +349,7 @@ def score(c: dict, cfg: dict, coverage: int) -> tuple[float, list[str], bool]:
     if c["engagement"]:
         s += min(0.05, 0.01 * math.log10(1 + c["engagement"]))
     s *= SOURCE_WEIGHT.get(c["source"], 1.0)
-    sensitive = any(word_in(text, w) for w in (*SENSITIVE, *cfg.get("sensitive_extra", [])))
+    sensitive = is_sensitive(f"{text} {group_text}", cfg)
     if sensitive:
         why.append("sensitive")
     return round(min(1.0, s), 3), why, sensitive
@@ -324,12 +365,14 @@ def cmd_init(a) -> int:
     for key, vals in (("queries", a.query), ("terms", a.term), ("signals", a.signal),
                       ("exclude", a.exclude), ("court_queries", a.court_query)):
         c[key] = sorted(set(c.get(key, [])) | {v.strip() for v in vals if v.strip()})
-    if a.source:
-        bad = [s for s in a.source if s not in SOURCES]
-        if bad:
-            print(f"unknown source {', '.join(bad)} (use {', '.join(SOURCES)})", file=sys.stderr)
-            return 1
-        c["sources"] = a.source
+    bad = [s for s in a.source + a.drop_source if s not in SOURCES]
+    if bad:
+        print(f"unknown source {', '.join(bad)} (use {', '.join(SOURCES)})", file=sys.stderr)
+        return 1
+    if a.source or a.drop_source:
+        # --source adds to the list (the first --source on a new config replaces the defaults)
+        base = [] if (a.source and (a.force or not p.exists())) else c.get("sources", [])
+        c["sources"] = [s for s in SOURCES if (s in base or s in a.source) and s not in a.drop_source]
     p.parent.mkdir(parents=True, exist_ok=True)
     gtm.atomic_write(p, json.dumps(c, indent=2) + "\n")
     print(json.dumps(c, indent=2))
@@ -353,29 +396,44 @@ def cmd_sweep(a) -> int:
                           "worst_case_usd": round(est, 4), "max_usd": a.max_usd}, indent=2))
         return 0
     since = gtm.today() - dt.timedelta(days=cfg["max_age_days"])
-    spent, raw, errors, skipped = 0.0, [], [], []
+    # charged: what treg reported. reserved: calls whose charge is unknown (not reported, or the call
+    # failed after it may have been billed), counted at their ceiling. The cap applies to the sum.
+    charged, reserved, raw, errors, skipped, ran = 0.0, 0.0, [], [], [], 0
     for src, q in calls:
         ceiling = CALL_CEILING_USD[src]
-        if spent + ceiling > a.max_usd + 1e-9:
+        if charged + reserved + ceiling > a.max_usd + 1e-9:
             skipped.append(f"{src}: {q} (budget)")
             continue
+        ran += 1
         try:
             if src == "courtlistener":
                 out = courtlistener(q, since)
             else:
-                out, usd = treg_call(ENDPOINTS[src], body_for(src, q), ceiling)
-                spent += usd
+                usd = None
+                try:
+                    out, usd = treg_call(ENDPOINTS[src], body_for(src, q), ceiling)
+                finally:
+                    if usd is None:
+                        reserved += ceiling
+                    else:
+                        charged += usd
+            check_shape(src, out)
             raw += normalize(src, out, q)
         except Exception as e:  # noqa: BLE001 - one source failing must not stop the others
             errors.append(f"{src}: {q}: {type(e).__name__}: {str(e)[:200]}")
+    spent = charged + reserved
 
     with gtm.locked():
         nd = news_dir()
         nd.mkdir(parents=True, exist_ok=True)
         seen_p = nd / "seen.json"
         seen = json.loads(seen_p.read_text()) if seen_p.exists() else {}
+        # {id: {"date", "queued"}}; a bare date is the 0.9.0 format and counts as queued
+        seen = {k: (v if isinstance(v, dict) else {"date": v, "queued": True}) for k, v in seen.items()}
         cutoff = (gtm.today() - dt.timedelta(days=SEEN_KEEP_DAYS)).isoformat()
-        seen = {k: v for k, v in seen.items() if v >= cutoff}
+        seen = {k: v for k, v in seen.items() if v["date"] >= cutoff}
+        queue = candidates()
+        waiting = {c["id"] for c in queue if c["status"] == "new"}
 
         # group syndicated copies of one story; keep the dated, most-engaged copy as the lead
         groups: dict[str, list[dict]] = {}
@@ -389,48 +447,53 @@ def cmd_sweep(a) -> int:
         fresh = []
         for key, rows in groups.items():
             urls = {canonical_url(r["url"]) for r in rows}
-            ids = {hashlib.sha1(u.encode()).hexdigest()[:12] for u in urls}
-            if key in seen or ids & set(seen):
+            ids = {hashlib.sha1(u.encode()).hexdigest()[:12] for u in urls} | {key}
+            # a story already queued is offered once; one that scored too low before is scored again,
+            # since more outlets picking it up can lift it over the line
+            if key in waiting or any(seen.get(i, {}).get("queued") for i in ids):
                 continue
             lead = sorted(rows, key=lambda r: (not r["published"], -r["engagement"]))[0]
             outlets = sorted({r["outlet"] for r in rows if r["outlet"]})
-            sc, why, sensitive = score(lead, cfg, len(outlets) or 1)
+            group_text = " ".join(f"{r['title']} {r['snippet']}" for r in rows)
+            sc, why, sensitive = score(lead, cfg, len(outlets) or 1, group_text)
+            queued = sc >= cfg["min_score"]
             for i in ids:
-                seen[i] = gtm.today().isoformat()
-            seen[key] = gtm.today().isoformat()
-            if sc < cfg["min_score"]:
+                seen[i] = {"date": gtm.today().isoformat(), "queued": queued}
+            if not queued:
                 continue
             pub = parse_date(lead["published"])
-            base = pub or gtm.today()
+            # an undated story gets no react or pitch window until someone reads its date (decide --published)
             fresh.append({"id": key, "found": gtm.today().isoformat(), "status": "new", "score": sc, "why": why,
                           "sensitive": sensitive, "title": lead["title"], "url": lead["url"],
                           "outlets": outlets, "sources": sorted({r["source"] for r in rows}),
                           "published": lead["published"], "snippet": lead["snippet"], "query": lead["query"],
-                          "react_by": (base + dt.timedelta(days=cfg["react_days"])).isoformat(),
-                          "pitch_by": (base + dt.timedelta(days=cfg["pitch_days"])).isoformat(),
+                          "react_by": (pub + dt.timedelta(days=cfg["react_days"])).isoformat() if pub else "",
+                          "pitch_by": (pub + dt.timedelta(days=cfg["pitch_days"])).isoformat() if pub else "",
                           "also": sorted({r["url"] for r in rows} - {lead["url"]})[:5]})
         fresh.sort(key=lambda c: -c["score"])
-        for c in fresh:
-            gtm.append_jsonl(nd / "candidates.jsonl", c)
+        # the queue first, then seen: a crash in between re-offers stories, which `waiting` then dedupes
+        gtm.write_jsonl(nd / "candidates.jsonl", queue + fresh)
         gtm.atomic_write(seen_p, json.dumps(seen, indent=1, sort_keys=True) + "\n")
         report = [f"# News sweep — {gtm.today().isoformat()}", "",
                   f"{len(calls)} searches, {len(raw)} results, {len(groups)} stories, {len(fresh)} new candidates, "
-                  f"${spent:.4f} spent.", ""]
+                  f"${charged:.4f} charged" + (f", ${reserved:.4f} reserved for calls with no reported charge" if reserved else "")
+                  + ".", ""]
         for c in fresh:
             flag = " **sensitive**" if c["sensitive"] else ""
             report.append(f"- [{c['score']:.2f}]{flag} [{c['title']}]({c['url']}) — {', '.join(c['outlets']) or c['sources'][0]}"
-                          f", {c['published'] or 'undated'}; react by {c['react_by']} (`{c['id']}`)")
+                          f", {c['published'] or 'undated'}; react by {c['react_by'] or 'read its date first'} (`{c['id']}`)")
         if errors:
             report += ["", "## Errors", *[f"- {e}" for e in errors]]
         if skipped:
             report += ["", "## Skipped for budget", *[f"- {s}" for s in skipped]]
         gtm.atomic_write(nd / f"{gtm.today().isoformat()}.md", "\n".join(report) + "\n")
-    print(json.dumps({"searches": len(calls), "results": len(raw), "new": len(fresh), "cost_usd": round(spent, 4),
+    print(json.dumps({"searches": ran, "planned": len(calls), "results": len(raw), "new": len(fresh),
+                      "cost_usd": round(spent, 4), "charged_usd": round(charged, 4), "reserved_usd": round(reserved, 4),
                       "errors": errors, "skipped_for_budget": skipped,
                       "top": [{k: c[k] for k in ("id", "score", "title", "sensitive", "react_by")} for c in fresh[:10]]},
                      indent=2))
-    # every search failing is a broken sweep, not a quiet week
-    return 1 if calls and len(errors) == len(calls) - len(skipped) and errors else 0
+    # nothing ran, or everything that ran failed: a broken sweep, not a quiet week
+    return 1 if ran == 0 or len(errors) == ran else 0
 
 
 def cmd_list(a) -> int:
@@ -449,10 +512,26 @@ def cmd_decide(a) -> int:
         if not hit:
             print(f"no candidate {a.id}", file=sys.stderr)
             return 1
-        c = hit[0]
+        c = hit[-1]  # the newest row if a story was ever queued twice
         today = gtm.today().isoformat()
+        if a.sensitive and not c.get("sensitive"):
+            c["sensitive"] = True  # one way: reading the story can only add the flag, and it sticks
+            gtm.write_jsonl(news_dir() / "candidates.jsonl", rows)
+        if a.published and not c.get("published"):
+            pub = parse_date(a.published)
+            if not pub:
+                print("--published takes YYYY-MM-DD", file=sys.stderr)
+                return 1
+            cfg = {**DEFAULT_CONFIG, **(json.loads(cfg_path().read_text()) if cfg_path().exists() else {})}
+            c.update({"published": pub.isoformat(),
+                      "react_by": (pub + dt.timedelta(days=cfg["react_days"])).isoformat(),
+                      "pitch_by": (pub + dt.timedelta(days=cfg["pitch_days"])).isoformat()})
         if a.decision in ("react", "pitch"):
             by = c["react_by"] if a.decision == "react" else c["pitch_by"]
+            if not by:
+                print(f"this story has no date, so no {a.decision} window: read it and pass --published YYYY-MM-DD",
+                      file=sys.stderr)
+                return 1
             if today > by:
                 print(f"too late to {a.decision} (window closed {by}); a page refresh still works", file=sys.stderr)
                 return 1
@@ -485,7 +564,8 @@ def main() -> int:
     p.add_argument("--signal", action="append", default=[])
     p.add_argument("--exclude", action="append", default=[])
     p.add_argument("--court-query", action="append", default=[])
-    p.add_argument("--source", action="append", default=[])
+    p.add_argument("--source", action="append", default=[], help="add a source")
+    p.add_argument("--drop-source", action="append", default=[], help="remove a source")
     p.add_argument("--force", action="store_true", help="start from defaults instead of extending")
     p = sub.add_parser("sweep", help="search every source, dedupe, score, queue")
     p.add_argument("--max-usd", type=gtm.finite_float, default=0.10)
@@ -499,6 +579,8 @@ def main() -> int:
     p.add_argument("--page", default="")
     p.add_argument("--note", default="")
     p.add_argument("--quote", default="")
+    p.add_argument("--sensitive", action="store_true", help="mark the story sensitive after reading it (one way)")
+    p.add_argument("--published", default="", help="the story's date, read from it, for an undated candidate")
     a = ap.parse_args()
     return {"init": cmd_init, "sweep": cmd_sweep, "list": cmd_list, "decide": cmd_decide}[a.cmd](a)
 

@@ -45,6 +45,7 @@ from __future__ import annotations
 import argparse
 import copy
 import datetime as dt
+import hashlib
 import json
 import os
 import random
@@ -1210,10 +1211,15 @@ def due(s: dict, fits: dict | None = None) -> tuple[list[dict], list[dict], list
                          "skill": "comparison-pages", "usd": 0.05, "event": stamp, "track": "discoverability",
                          "kind": "improvement"})
     news = [c for c in read_jsonl(root / "news" / "candidates.jsonl") if c.get("status") == "new"]
-    if news and s["jobs"].get("news_watch", {}).get("enabled", True) is not False:
-        stamp = max(c["found"] for c in news)
+    nwj = s["jobs"].get("news_watch", {})
+    news_on = (nwj.get("enabled", True) is not False and stage in nwj.get("stages", ["launched"])
+               and s["tracks"].get(nwj.get("track", "discoverability"), {}).get("enabled", True))
+    if news and news_on:
+        # the set of waiting ids, so a second sweep on the same day still brings the job back
+        ids = sorted(c["id"] for c in news)
+        stamp = f"{max(c['found'] for c in news)}:{len(ids)}:{hashlib.sha1(' '.join(ids).encode()).hexdigest()[:8]}"
         if stamp != (s.get("events") or {}).get("news_act"):
-            live = [c for c in news if c.get("pitch_by", "") >= t.isoformat()]
+            live = [c for c in news if not c.get("pitch_by") or c["pitch_by"] >= t.isoformat()]
             jobs.append({"job": "news_act", "why": f"{len(news)} news candidates waiting ({len(live)} still timely)",
                          "skill": "news", "usd": 0.0, "event": stamp, "track": "discoverability",
                          "kind": "improvement", "max_actions": 3,

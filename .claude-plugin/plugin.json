@@ -1,7 +1,7 @@
 {
   "name": "marketing",
   "version": "0.9.0",
-  "description": "Growth and marketing skills for coding agents, starting with agent discoverability: measure how AI answer engines see a product, fix the site so AI search can reach and cite it, and ship code-grounded answer pages. Uses treg for live data.",
+  "description": "Growth operator for coding agents: measures the funnel, finds the stage holding growth back and works it from the product repo - AI search visibility, SEO, content, news, outreach, CRO, activation, lifecycle and paid - with PRs and drafts a human approves. Uses treg for live data and PostHog for measurement.",
   "author": {
     "name": "William Smith"
   },
