@@ -153,6 +153,13 @@ Rerun phase 2 on its prompts and compare with the saved `recon.json`. Update fac
 when something changed, and bump `dateModified` only then. A fake refresh teaches engines to ignore
 your dates.
 
+A **news refresh** (from `../news`, decision `refresh`) adds one recent, real example to a page
+that already explains its mechanism: two to four sentences, dated, quoting the primary source (the
+filing, the regulator, the original report) with its URL in `evidence.md`. It describes what
+happened and how, never the exposed content itself, and names private people only if the primary
+source does and the page needs it (usually it doesn't). That is a real change, so `dateModified`
+moves.
+
 ## Spend
 
 A page costs $0.05-0.30 in treg calls: recon at about $0.01 per answer, keyword and

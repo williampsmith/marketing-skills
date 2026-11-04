@@ -27,7 +27,8 @@ experiment results.
     python3 gtm.py profile [--motion M --acv N --cycle-days N --regulated R --attention ch=0.3] [--confirm]
     python3 gtm.py connect posthog [on|off] | connect search_console sc-domain:example.com | connect revenue stripe
     python3 gtm.py authority show | grant CHANNEL --level approve_to_send [--daily-cap 20]
-    python3 gtm.py approve BATCH --count N --quote "..."   # a human approved the first N drafts
+    python3 gtm.py approve BATCH --count N --quote "..." [--approver slack:U… --source <link>]
+                                                         # a human approved the first N drafts
     python3 gtm.py outcome CHANNEL --replies N --complaints N
     python3 gtm.py spend check|log paid_search --current-daily-usd 40 --new-daily-usd 46
     python3 gtm.py track paid on --quote "..."
@@ -45,6 +46,7 @@ from __future__ import annotations
 import argparse
 import copy
 import datetime as dt
+import hashlib
 import json
 import os
 import random
@@ -150,6 +152,12 @@ DEFAULT_JOBS = {
         "acts_when": "always records clicks, top-10 share and the index proxy",
         "self_check": "Search Console lags about 3 days; never compare a partial week",
         "stop": "skip on quota errors"},
+    "daily_report": {
+        "every_days": 1, "usd": 0.0, "stages": ["prelaunch", "launched"], "skill": "daily-report",
+        "track": "all", "kind": "review", "enabled": False,
+        "acts_when": "daily, once a chat channel is connected (`gtm.py job daily_report on`)",
+        "self_check": "every number in the text and the charts comes from the day's data.json",
+        "stop": "none: a report is read-only; post it without charts if rendering fails"},
     "monthly_report": {
         "every_days": 30, "usd": 0.0, "stages": ["launched"], "skill": "measurement",
         "track": "all", "kind": "review",
@@ -170,6 +178,12 @@ DEFAULT_JOBS = {
         "acts_when": "an account matching the ICP shows a buying signal and is outside its cooldown",
         "self_check": "the signal is recent and about the problem we solve; the contact is the right role",
         "stop": "drafts into a batch for approval; suppressed or cooled-down accounts are skipped"},
+    "news_watch": {
+        "every_days": 2, "usd": 0.1, "stages": ["prelaunch", "launched"], "skill": "news",
+        "track": "discoverability", "kind": "sensor", "requires": ["file:news.json"],
+        "acts_when": "a story in the category is new, recent and scores at or above news.json's min_score",
+        "self_check": "a story counts only if it is about the problem we solve, not a namesake (read it before acting)",
+        "stop": "queue only; acting is news_act's job. Every source failing is an alert, not a quiet week"},
     "panel_review": {
         "every_days": 90, "usd": 0.0, "stages": ["launched"], "skill": "ai-visibility-audit",
         "track": "discoverability", "kind": "review",
@@ -1151,6 +1165,8 @@ def requirement_unmet(s: dict, req: str, fits: dict | None) -> str | None:
         return f"track {name} is off"
     if kind == "profile" and not s["profile"].get("confirmed"):
         return "the GTM profile isn't confirmed yet"
+    if kind == "file" and not (R() / name).exists():
+        return f"<state>/{name} doesn't exist yet (see the {name.split('.')[0]} skill's setup)"
     return None
 
 
@@ -1201,6 +1217,22 @@ def due(s: dict, fits: dict | None = None) -> tuple[list[dict], list[dict], list
             jobs.append({"job": "comparison_refresh", "why": f"watched pages changed ({stamp})",
                          "skill": "comparison-pages", "usd": 0.05, "event": stamp, "track": "discoverability",
                          "kind": "improvement"})
+    news = [c for c in read_jsonl(root / "news" / "candidates.jsonl") if c.get("status") == "new"]
+    nwj = s["jobs"].get("news_watch", {})
+    news_on = (nwj.get("enabled", True) is not False and stage in nwj.get("stages", ["launched"])
+               and s["tracks"].get(nwj.get("track", "discoverability"), {}).get("enabled", True))
+    if news and news_on:
+        # the set of waiting ids, so a second sweep on the same day still brings the job back
+        ids = sorted(c["id"] for c in news)
+        stamp = f"{max(c['found'] for c in news)}:{len(ids)}:{hashlib.sha1(' '.join(ids).encode()).hexdigest()[:8]}"
+        if stamp != (s.get("events") or {}).get("news_act"):
+            live = [c for c in news if not c.get("pitch_by") or c["pitch_by"] >= t.isoformat()]
+            jobs.append({"job": "news_act", "why": f"{len(news)} news candidates waiting ({len(live)} still timely)",
+                         "skill": "news", "usd": 0.0, "event": stamp, "track": "discoverability",
+                         "kind": "improvement", "max_actions": 3,
+                         "acts_when": "a candidate fits a page, a post or a pitch the human would sign",
+                         "self_check": "read the story itself; describe the mechanism, never repeat leaked content",
+                         "stop": "drafts and PRs only; sensitive stories only as refreshes unless a human approves"})
     for b in bets():
         if b["status"] == "open" and _date(b["check"]) <= t:
             jobs.append({"job": "bet_close", "why": f"bet {b['id']} reached its check date {b['check']}",
@@ -1264,7 +1296,7 @@ def cmd_init(a) -> int:
     for k in ("goal", "site_url", "key_paths", "repo_default_branch", "notify", "accepted_problems",
               "known_issues", "ladder", "last_run", "events", "cursors", "keys", "failures", "profile",
               "connections", "fit", "tracks", "floors", "focus", "work_mix", "jobs", "budget_usd_month",
-              "per_run_cap_usd", "measurement", "brand_terms", "sender", "authority"):
+              "per_run_cap_usd", "measurement", "brand_terms", "sender", "authority", "approvers", "approver_log"):
         if k in old:
             s[k] = old[k]
     for key, val in (("budget_usd_month", a.budget), ("per_run_cap_usd", a.per_run_cap), ("site_url", a.site_url)):
@@ -1589,7 +1621,7 @@ def approvals() -> list[dict]:
 
 
 def approved_hashes(batch: str) -> set:
-    return {h for r in approvals() if r["batch"] == batch for h in r.get("hashes", [])}
+    return {h for r in approvals() if r.get("batch") == batch for h in r.get("hashes", [])}
 
 
 def send_log() -> list[dict]:
@@ -1775,11 +1807,144 @@ def record_send(channel: str, n: int, batch: str, key: str | None = None, cooldo
             save_state(s)
 
 
+UNATTENDED_FILE = "UNATTENDED"
+
+
+def unattended_marker() -> dict | None:
+    """A scheduled run in progress, marked by the scheduler before the agent starts (for hosts like Hermes
+    whose cron jobs can't set environment variables). Expired markers don't count."""
+    p = R() / UNATTENDED_FILE
+    if not p.exists():
+        return None
+    try:
+        m = json.loads(p.read_text())
+        if not isinstance(m, dict):
+            raise ValueError("not an object")
+        if dt.datetime.fromisoformat(m["expires"]) > dt.datetime.now(dt.timezone.utc):
+            return m
+    except (ValueError, KeyError, TypeError, OSError):
+        return {"expires": "unreadable marker: treated as a scheduled run until removed"}
+    return None
+
+
 def unattended_refusal(what: str) -> str | None:
     if os.environ.get("MARKETING_UNATTENDED"):
         return (f"{what} is a human decision; this run is unattended (MARKETING_UNATTENDED is set). "
                 "Ask in the digest and apply it in a run where the human is present")
+    m = unattended_marker()
+    if m:
+        return (f"{what} is a human decision, and a scheduled run is in progress (until {m.get('expires')}; "
+                "`gtm.py unattended status`). Ask in the digest and apply it once the run has finished")
     return None
+
+
+def cmd_unattended(a) -> int:
+    """Mark a scheduled run, from the scheduler's pre-run script. The marker only expires: there is no
+    command to end it early, so a run can't lift its own restrictions through gtm.py. `start` during a
+    run extends it (never shortens). This is a guard against mistakes, not against an agent with a
+    shell that sets out to delete the file; see docs/hermes-slack.md."""
+    p = R() / UNATTENDED_FILE
+    if a.action == "start":
+        if not 0 < a.hours <= 12:
+            print("--hours must be between 0 and 12", file=sys.stderr)
+            return 1
+        now = dt.datetime.now(dt.timezone.utc)
+        expires = now + dt.timedelta(hours=a.hours)
+        cur = unattended_marker()
+        try:
+            if cur and dt.datetime.fromisoformat(cur["expires"]) > expires:
+                expires = dt.datetime.fromisoformat(cur["expires"])
+        except (ValueError, KeyError, TypeError):
+            pass
+        m = {"started": (cur or {}).get("started") or now.isoformat(timespec="seconds"),
+             "expires": expires.isoformat(timespec="seconds"), "by": a.by}
+        atomic_write(p, json.dumps(m) + "\n")
+        append_jsonl(R() / "unattended.log", {"event": "start", "at": now.isoformat(timespec="seconds"), **m})
+        print(json.dumps(m))
+        return 0
+    m = unattended_marker()
+    print(json.dumps({"scheduled_run": bool(m or os.environ.get("MARKETING_UNATTENDED")),
+                      "env": bool(os.environ.get("MARKETING_UNATTENDED")), "marker": m}))
+    return 0
+
+
+def approval_provenance(s: dict, a, what: str) -> tuple[dict | None, str | None]:
+    """Who approved and where, stored with every human decision. When gtm.json lists `approvers`, the
+    approver must be one of them: the agent relays an approval, it can't be its source."""
+    approver = (getattr(a, "approver", None) or "").strip()
+    allowed = s.get("approvers") or []
+    # once a list has existed, an empty list means nobody may approve, never anybody
+    if (allowed or s.get("approvers_required")) and approver not in allowed:
+        return None, (f"{what} needs --approver set to one of gtm.json approvers ({', '.join(allowed)}): "
+                      "the person who approved, as the chat platform identifies them (e.g. slack:U0123ABC)")
+    out = {}
+    if approver:
+        out["approver"] = approver
+    if getattr(a, "source", None):
+        out["source"] = a.source
+    return out, None
+
+
+def cmd_approvers(a) -> int:
+    """Who may approve. Adding someone is itself a human decision, made by an existing approver."""
+    s = load_state()
+    cur = list(s.get("approvers") or [])
+    if a.action == "show":
+        print(json.dumps(cur))
+        return 0
+    if a.action == "remove":
+        why = unattended_refusal("removing an approver")
+        if why or not a.quote:
+            print(why or "--quote the human's instruction", file=sys.stderr)
+            return 1
+        if a.who not in cur:
+            print(f"{a.who} isn't an approver", file=sys.stderr)
+            return 1
+        if cur == [a.who]:
+            print("can't remove the last approver: add the new one first (an empty list would block every "
+                  "approval). To stop all activity, use `gtm.py pause`", file=sys.stderr)
+            return 1
+        prov, why = approval_provenance(s, a, "removing an approver")
+        if why:
+            print(why, file=sys.stderr)
+            return 1
+        s["approvers"] = [x for x in cur if x != a.who]
+        s.setdefault("approver_log", []).append({"date": today().isoformat(), "removed": a.who, "quote": a.quote,
+                                                 **prov})
+        save_state(s)
+        print(json.dumps(s["approvers"]))
+        return 0
+    why = unattended_refusal("adding an approver")
+    if why or not a.quote:
+        print(why or "--quote the human's instruction", file=sys.stderr)
+        return 1
+    if not re.match(r"^[a-z]+:[A-Za-z0-9._@-]+$", a.who or ""):
+        print("approvers are platform:id, e.g. slack:U0123ABC", file=sys.stderr)
+        return 1
+    prov, why = approval_provenance(s, a, "adding an approver")
+    if why:
+        print(why, file=sys.stderr)
+        return 1
+    if a.who not in cur:
+        cur.append(a.who)
+    s["approvers"] = cur
+    s["approvers_required"] = True
+    s.setdefault("approver_log", []).append({"date": today().isoformat(), "added": a.who, "quote": a.quote, **prov})
+    save_state(s)
+    print(json.dumps(cur))
+    return 0
+
+
+def cmd_job(a) -> int:
+    """Turn a scheduled job on or off (e.g. daily_report once a chat channel is connected)."""
+    s = load_state()
+    if a.name not in s["jobs"]:
+        print(f"no job {a.name!r}; jobs: {', '.join(sorted(s['jobs']))}", file=sys.stderr)
+        return 1
+    s["jobs"][a.name]["enabled"] = a.state == "on"
+    save_state(s)
+    print(f"{a.name}: {a.state}")
+    return 0
 
 
 def cmd_authority(a) -> int:
@@ -1818,6 +1983,12 @@ def cmd_authority(a) -> int:
         if not a.quote:
             print("--quote the human's instruction (it is stored with the grant)", file=sys.stderr)
             return 1
+        prov, why = approval_provenance(s, a, "granting authority")
+        if why:
+            print(why, file=sys.stderr)
+            return 1
+    else:
+        prov = {}
     if a.level == "bounded" and a.channel in SEND_CHANNELS:
         if a.channel not in BOUNDED_SEND_CHANNELS:
             print(f"{a.channel} stays at approve_to_send: press, editors and creators are never bounded",
@@ -1857,6 +2028,9 @@ def cmd_authority(a) -> int:
         if a.level == "approve_to_send":
             cur["ats_since"] = today().isoformat()
     cur.update({"level": a.level, "granted": today().isoformat(), "quote": a.quote or "lowered"})
+    for k in ("approver", "source"):
+        cur.pop(k, None)
+    cur.update(prov)
     for key, val in (("daily_cap", a.daily_cap), ("cooldown_days", a.cooldown_days),
                      ("daily_spend_cap_usd", a.daily_spend_cap), ("max_change_pct", a.max_change_pct),
                      ("max_changes_per_day", a.max_changes_per_day)):
@@ -1927,6 +2101,14 @@ def cmd_track(a) -> int:
         if why or not a.quote:
             print(why or "--quote the human's instruction", file=sys.stderr)
             return 1
+        prov, why = approval_provenance(s, a, "turning on the paid track")
+        if why:
+            print(why, file=sys.stderr)
+            return 1
+        tr = s["tracks"].setdefault(a.track, {"rungs": {}})
+        for k in ("approver", "source"):
+            tr.pop(k, None)
+        tr.update(prov)
     s["tracks"].setdefault(a.track, {"rungs": {}})["enabled"] = a.state == "on"
     if a.quote:
         s["tracks"][a.track]["quote"] = a.quote
@@ -1945,6 +2127,10 @@ def cmd_approve(a) -> int:
     if not a.quote:
         print("--quote the human's reply (e.g. \"approve batch acme-1, 12\")", file=sys.stderr)
         return 1
+    prov, why = approval_provenance(load_state(), a, "approving a batch")
+    if why:
+        print(why, file=sys.stderr)
+        return 1
     d = R() / "sends" / a.batch / "drafts.jsonl"
     drafts = read_jsonl(d)
     if not drafts:
@@ -1958,7 +2144,7 @@ def cmd_approve(a) -> int:
         return 1
     hashes = [draft_hash(x) for x in drafts[:a.count]]
     append_jsonl(R() / "approvals.jsonl", {"date": today().isoformat(), "batch": a.batch, "count": a.count,
-                                           "hashes": hashes, "quote": a.quote})
+                                           "hashes": hashes, "quote": a.quote, **prov})
     print(f"approved the first {a.count} of {len(drafts)} drafts in {a.batch}")
     return 0
 
@@ -2210,6 +2396,8 @@ def main() -> int:
     p.add_argument("--daily-cap", type=int)
     p.add_argument("--cooldown-days", type=int)
     p.add_argument("--quote", help="the human's instruction, verbatim (required to grant)")
+    p.add_argument("--approver", help="who approved, as platform:id (e.g. slack:U0123ABC); required when gtm.json lists approvers")
+    p.add_argument("--source", help="where they approved: a link to the message or reaction")
     p.add_argument("--template", action="append",
                    help="bounded sending: id of <state>/templates/<id>.txt to pin by hash; repeatable")
     p.add_argument("--segment", action="append",
@@ -2232,10 +2420,28 @@ def main() -> int:
     p.add_argument("track", choices=TRACKS)
     p.add_argument("state", choices=["on", "off"])
     p.add_argument("--quote", help="the human's instruction (required to turn paid on)")
+    p.add_argument("--approver", help="who approved, as platform:id (e.g. slack:U0123ABC); required when gtm.json lists approvers")
+    p.add_argument("--source", help="where they approved: a link to the message or reaction")
     p = sub.add_parser("approve", help="apply a human's approval of a drafted batch")
     p.add_argument("batch")
     p.add_argument("--count", type=int, required=True, help="approve the first N drafts, in file order")
     p.add_argument("--quote", help="the human's reply, verbatim (required)")
+    p.add_argument("--approver", help="who approved, as platform:id (e.g. slack:U0123ABC); required when gtm.json lists approvers")
+    p.add_argument("--source", help="where they approved: a link to the message or reaction")
+    p = sub.add_parser("approvers", help="who may approve batches, grants and paid (platform:id)")
+    p.add_argument("action", choices=["show", "add", "remove"])
+    p.add_argument("who", nargs="?")
+    p.add_argument("--quote", help="the human's instruction (required to add)")
+    p.add_argument("--approver", help="who approved, as platform:id (e.g. slack:U0123ABC); required when gtm.json lists approvers")
+    p.add_argument("--source", help="where they approved: a link to the message or reaction")
+    p = sub.add_parser("unattended", help="mark a scheduled run (for schedulers that can't set env vars)")
+    p.add_argument("action", choices=["start", "status"])
+    p.add_argument("--hours", type=float, default=3.0,
+                   help="the marker expires after this long (default 3); start again to extend, never to shorten")
+    p.add_argument("--by", default="", help="who marked it, e.g. hermes-cron:gtm-tick")
+    p = sub.add_parser("job", help="turn a scheduled job on or off")
+    p.add_argument("name")
+    p.add_argument("state", choices=["on", "off"])
     p = sub.add_parser("pause")
     p.add_argument("--reason", default="")
     p = sub.add_parser("budget")
@@ -2314,7 +2520,7 @@ def main() -> int:
                "focus": cmd_focus, "fit": cmd_fit, "tracks": cmd_tracks, "next": cmd_next, "budget": cmd_budget,
                "record": cmd_record, "may": cmd_may, "metric": cmd_metric, "bet": cmd_bet,
                "learnings": cmd_learnings, "pause": cmd_pause, "resume": cmd_resume, "profile": cmd_profile,
-               "stage": cmd_stage, "connect": cmd_connect, "authority": cmd_authority, "approve": cmd_approve, "outcome": cmd_outcome, "spend": cmd_spend, "track": cmd_track, "digest": cmd_digest, "store": cmd_store, "sync": cmd_sync,
+               "stage": cmd_stage, "connect": cmd_connect, "authority": cmd_authority, "approve": cmd_approve, "approvers": cmd_approvers, "job": cmd_job, "unattended": cmd_unattended, "outcome": cmd_outcome, "spend": cmd_spend, "track": cmd_track, "digest": cmd_digest, "store": cmd_store, "sync": cmd_sync,
                "migrate": cmd_migrate}[a.cmd]
     try:
         if a.cmd in ("where", "store", "pause"):  # pause must never wait behind a running send

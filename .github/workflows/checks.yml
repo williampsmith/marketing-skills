@@ -39,7 +39,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          # 26 is LTS and has the permission model's network block, which the renderer requires
+          node-version: "26"
       - name: Validate plugin
         # pinned so a CLI release can't change the result of an unchanged commit; bump deliberately
         run: npx -y @anthropic-ai/claude-code@2.1.316 plugin validate .
@@ -52,6 +53,9 @@ jobs:
             grep -q "^description: ." "$d/SKILL.md" || { echo "::error file=$d/SKILL.md::missing description"; fail=1; }
           done
           exit $fail
+      - name: Chart renderer (D3 in a sandbox, number check, PNG)
+        working-directory: skills/daily-report/scripts/render
+        run: npm ci --no-audit --no-fund && npm test
       - name: Eval cases are well-formed (no model calls)
         run: python3 .github/scripts/check_evals.py evals
       - name: Manifest versions agree

@@ -46,13 +46,13 @@ assistants, so it keeps a share of the work until it reaches `preferred`.
 flowchart TD
     A["Daily scheduler<br/>(Hermes cron, /schedule, CI)"] --> B["gtm skill, tick mode"]
     B --> C["gtm.py decides:<br/>focus, due jobs, budget,<br/>cooldowns, bets past their check date"]
-    C --> D["Run due jobs<br/>audit · access check · page watch · outreach refresh<br/>and, weekly, the work session: 2 actions, each a bet"]
+    C --> D["Run due jobs<br/>audit · access check · page watch · news watch · metrics sync<br/>outreach refresh · news stories worth acting on<br/>and, weekly, the work session: 2 actions, each a bet"]
     D --> E["Metrics and audit scores<br/>written to the state store"]
     D --> F
-    F["Outputs<br/>PRs for pages and site changes<br/>drafts for outreach and profiles"]
-    D --> G["Digest in the state store<br/>'Needs you' list sent to chat or GitHub"]
+    F["Outputs<br/>PRs for pages and site changes<br/>drafts for outreach, posts, pitches and profiles"]
+    D --> G["Digest in the state store, daily report with charts<br/>'Needs you' items sent to chat (one each) or GitHub"]
     F --> G
-    G --> H["Human merges PRs,<br/>sends drafts, approves proposals"]
+    G --> H["Human merges PRs, sends drafts,<br/>approves with a reaction or reply,<br/>asks the operator questions in chat"]
     E -.->|"bets close against the metrics"| C
 ```
 
@@ -82,7 +82,10 @@ into which tactics get tried next. A result becomes a learning only after a huma
 | `experiments` | Picks A/B, holdout, staggered or before/after from the traffic (`stats.py`), fixes the metric first, checks sample ratio, closes bets from real counts | free |
 | `lifecycle` | Onboarding, trial, dunning, a fair cancel flow, win-back, referrals and review requests, as templates, PRs or drafts for the email platform; judged against holdouts | free |
 | `paid` | Off until a human turns it on. Read-only audits (tracking, waste, structure, payback), competitor ad research, proposals; budget changes only under granted caps | free audits; ~$0.01 per competitor ad lookup |
-| `social` | Organic posts and community answers drafted from launches, pages and bets, for a human to post | free |
+| `social` | Organic posts and community answers drafted from launches, pages, bets and news, for a human to post | free |
+| `daily-report` | A daily report for a team chat channel: what moved and whether it's more than noise, what shipped, charts drawn in D3 for the day's finding, PostHog links, and one message per approval to react to; also answers "how are we doing" with a chart. Slack via Hermes: [docs/hermes-slack.md](docs/hermes-slack.md) | free (PostHog queries) |
+| `launch-video` | A 20-45 s motion-design video for a release, built with HyperFrames from what actually merged and the real product screens: claims-checked copy, local voiceover, a human approves the preview before the final render, and a human posts it | free (local render and voice) |
+| `news` | Watches current events in the category (news, Google News, Hacker News, X, optionally court filings) through treg, scores and queues stories, and turns the good ones into page refreshes, timely posts or press pitches | ~$0.01-0.05 per sweep |
 
 ### Where the data lives
 

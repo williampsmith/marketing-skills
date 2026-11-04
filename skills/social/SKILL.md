@@ -21,6 +21,10 @@ draft passes the `../writing` gates (claims from the ledger, no AI-tell phrasing
 3. **Closed bets** with a result worth sharing (a learning the human accepted), told as what was
    tried and what happened, with numbers only if they're the product's own and sourced.
 4. **Customer language** in `<state>/product-context.md`: a question buyers ask, answered.
+5. **News** (`../news`, decision `react`): a story in the category, while it's fresh (`react_by`),
+   when the team can add something true the coverage misses, usually how the thing happened and
+   how to avoid it. The post links the original report, not the product, and stands on its own
+   without a mention of the product. Never repeat leaked content or mock the people involved.
 
 Skip a post when the honest answer to "why would someone who never clicks care?" is "they wouldn't".
 
