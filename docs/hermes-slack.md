@@ -65,6 +65,10 @@ at it before relying on it:
 cd skills/daily-report/scripts/render && npm test
 ```
 
+For launch videos (`launch-video`), the host also needs FFmpeg and room for the Chrome that
+HyperFrames downloads on first use; add `HYPERFRAMES_NO_TELEMETRY=1` to `~/.hermes/.env`. Drafts and
+the final MP4 are posted to the thread with `MEDIA:<path>`, for a person to publish.
+
 ## 5. In the operator (gtm init, or later in chat with the owner present)
 
 ```sh

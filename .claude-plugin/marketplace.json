@@ -8,8 +8,8 @@
     {
       "name": "marketing",
       "source": "./",
-      "description": "Growth operator (gtm) for the whole funnel: product-context, measurement, writing, ai-visibility-audit, ai-search-optimization, entity-presence, content, comparison-pages, competitive-intel, citation-outreach, seo, customer-research, outbound, creative, social, news, daily-report, cro, activation, experiments, lifecycle, paid.",
-      "version": "0.10.0"
+      "description": "Growth operator (gtm) for the whole funnel: product-context, measurement, writing, ai-visibility-audit, ai-search-optimization, entity-presence, content, comparison-pages, competitive-intel, citation-outreach, seo, customer-research, outbound, creative, social, news, daily-report, launch-video, cro, activation, experiments, lifecycle, paid.",
+      "version": "0.11.0"
     }
   ]
 }

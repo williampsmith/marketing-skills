@@ -50,6 +50,10 @@ the loop and `docs/design/growth-operator.md` for the design being implemented.
   inside a Node permission-model sandbox, then the parent re-reads the SVG: root size, no external
   references, every number shown is in the data; resvg to PNG; pinned deps with a lockfile,
   `npm ci && npm test` there; Node 25+, CI on 26).
+  `skills/launch-video/scripts/video.py` (release facts from git and gh; the only way the skills run
+  HyperFrames: pinned version `PIN`, telemetry and skill fetching off, local-only media, cloud, paid
+  and account commands refused, a render above draft only with an approval pinned to the project's
+  content hash; `tests/test_launch_video.py` replaces `video.run` and starts nothing).
   `skills/lifecycle/` and `skills/paid/` are prose only: lifecycle sends through
   `send_batch.py` (channel `lifecycle_email`), paid gates spend through `gtm.py spend check|log`.
   Sending and spend authority (`authority`, `approve`, `outcome`, `spend`, `track`; levels draft,
@@ -78,7 +82,7 @@ the loop and `docs/design/growth-operator.md` for the design being implemented.
   `posthog-outbox.jsonl`, `plan.md`, `digests/`, `access/`, `watch/`, `watch.json`, `outreach/`,
   `competitors/`, `entity/`, `launches/`, `seo/`, `research/`, `outbound/accounts/`,
   `sends/<batch>/`, `sends.jsonl`, `approvals.jsonl`, `outcomes.jsonl`, `ad-spend.jsonl`,
-  `suppression.csv`, `lifecycle/<flow>/`, `paid/`, `creative/<batch>/`, `social/`, `news.json`, `news/`, `reports/daily/<date>/`, `reports/charts/`,
+  `suppression.csv`, `lifecycle/<flow>/`, `paid/`, `creative/<batch>/`, `social/`, `news.json`, `news/`, `reports/daily/<date>/`, `reports/charts/`, `launches/<date>-<slug>/` (launch-video projects),
   `UNATTENDED`, `unattended.log`. Keep those names stable across skills. Scripts resolve the
   directory through `marketing_state.state_root()`; skill prose writes `<state>/…`. The product repo
   only receives PRs.

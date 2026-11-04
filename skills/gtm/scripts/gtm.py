@@ -1621,7 +1621,7 @@ def approvals() -> list[dict]:
 
 
 def approved_hashes(batch: str) -> set:
-    return {h for r in approvals() if r["batch"] == batch for h in r.get("hashes", [])}
+    return {h for r in approvals() if r.get("batch") == batch for h in r.get("hashes", [])}
 
 
 def send_log() -> list[dict]:

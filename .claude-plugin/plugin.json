@@ -1,7 +1,7 @@
 {
   "name": "marketing",
-  "version": "0.10.0",
-  "description": "Growth operator for coding agents: measures the funnel, finds the stage holding growth back and works it from the product repo - AI search visibility, SEO, content, news, outreach, CRO, activation, lifecycle and paid - with PRs and drafts a human approves, a daily report with charts in team chat, and a chat interface for questions and approvals. Uses treg for live data and PostHog for measurement.",
+  "version": "0.11.0",
+  "description": "Growth operator for coding agents: measures the funnel, finds the stage holding growth back and works it from the product repo - AI search visibility, SEO, content, news, outreach, CRO, activation, lifecycle and paid - with PRs and drafts a human approves, a daily report with charts in team chat, launch videos, and a chat interface for questions and approvals. Uses treg for live data and PostHog for measurement.",
   "author": {
     "name": "William Smith"
   },

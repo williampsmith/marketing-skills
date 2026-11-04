@@ -275,7 +275,9 @@ gets a look. `launch_scan` runs this daily; run it by hand with `launch <PR, tag
 9. **Tracking**: propose 1-3 panel prompts for the job the feature does in the digest (panel
    changes need a yes), and open a bet with a check date.
 10. **Announcement draft**: a changelog entry and one short post from the claims rows, through
-    `../writing`, saved under `<state>/launches/<date>-<slug>.md` for a human to publish.
+    `../writing`, saved under `<state>/launches/<date>-<slug>.md` for a human to publish. Major
+    launches (and medium ones when the team wants it): propose a launch video in "Needs you" and make
+    it with `../launch-video` once someone says yes; it stops for approval before the final render.
 11. `record launch_scan --key <sha or tag>`, and list what was prepared under the digest's "Needs you".
 
 ## Autonomy gates
