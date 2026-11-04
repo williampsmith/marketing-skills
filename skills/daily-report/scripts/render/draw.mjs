@@ -2,7 +2,7 @@
 // model on: it may read only the renderer's own folder, the chart and the data, write nothing, open no
 // network connection (Node 25+), start no process or worker, and load no native addon. It runs the chart module
 // against a jsdom SVG and prints {svg, texts} as JSON on stdout.
-import { readFileSync } from "node:fs";
+import { readFileSync, writeSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { JSDOM } from "jsdom";
 import * as d3all from "d3";
@@ -28,6 +28,13 @@ const data = deepFreeze(JSON.parse(readFileSync(dataPath, "utf8")));
 const opts = deepFreeze(JSON.parse(optsJson || "{}"));
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>");
+// The chart can reach the jsdom window (svg.node().ownerDocument.defaultView). Take away everything
+// on it that talks to the network, as a second fence for Node versions whose sandbox can't block it.
+for (const k of ["XMLHttpRequest", "WebSocket", "EventSource", "fetch", "Request", "Response", "Headers",
+                 "Worker", "SharedWorker", "Image", "Audio", "open"]) {
+  try { delete dom.window[k]; } catch { /* non-configurable: leave it */ }
+  try { Object.defineProperty(dom.window, k, { value: undefined, configurable: false }); } catch { /* ignore */ }
+}
 globalThis.document = dom.window.document; // d3.create and friends look for a global document
 
 const svg = d3.select(dom.window.document.body).append("svg")
@@ -42,15 +49,7 @@ if (typeof mod.default !== "function") {
 }
 await mod.default({ d3, svg, data, opts, theme, width, height, helpers: { textWidth, header, styleAxis } });
 
-// Every visible text with whether it is scale output (axis ticks) or explicitly exempted, for the
-// harness's "numbers come from the data" check.
-const texts = [];
-for (const el of dom.window.document.querySelectorAll("svg text")) {
-  if (el.parentNode && el.parentNode.closest && el.parentNode.closest("text")) continue; // tspans: counted once
-  texts.push({
-    text: el.textContent,
-    tick: Boolean(el.closest(".tick")),
-    exempt: el.closest("[data-number=label]") ? true : false,
-  });
-}
-process.stdout.write(JSON.stringify({ svg: svg.node().outerHTML, texts }));
+// Serialize as XML (resvg rejects HTML entities such as &nbsp;) and hand it back on fd 3, so a chart's
+// console.log can't corrupt the result. The parent re-reads everything it checks from this SVG.
+const out = new dom.window.XMLSerializer().serializeToString(svg.node());
+writeSync(3, out);

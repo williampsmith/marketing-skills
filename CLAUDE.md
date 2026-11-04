@@ -14,8 +14,8 @@ the loop and `docs/design/growth-operator.md` for the design being implemented.
   `tracks`/`ladder`, `next`, `budget`, `record`, `may`, `metric`, `bet`, `learnings`, `pause`/`resume`,
   `digest`, `store use`, `sync pull|push`, `migrate`, `job` (turn a job on/off), `approvers` (who may
   approve; `approve`, `authority grant` and `track paid on` take `--approver`/`--source`),
-  `unattended start|end|status` (a scheduled-run marker for schedulers without per-job env vars;
-  `unattended_refusal` honours it and `MARKETING_UNATTENDED`). The gtm skill must ask it rather than reason
+  `unattended start|status` (an expiry-only scheduled-run marker for schedulers without per-job env
+  vars; `unattended_refusal` honours it and `MARKETING_UNATTENDED`). The gtm skill must ask it rather than reason
   about dates, money, fit, focus or experiment results.
 - `skills/gtm/references/`: `channel-fit.json` (channel × motion matrix, cost floors, tactics; read by
   `gtm.py`) and `channel-fit.md`, `funnel-templates.json` (stages and floors per motion),
@@ -47,8 +47,9 @@ the loop and `docs/design/growth-operator.md` for the design being implemented.
   series, weekly readings with a robust band and an exact Poisson test, Wilson intervals on funnel
   steps, actions, items waiting on a human; `tests/test_daily_report.py`) and
   `skills/daily-report/scripts/render/` (the **only Node code**: agent-written D3 charts run in jsdom
-  inside a Node permission-model sandbox, a check that every number shown is in the data, resvg to
-  PNG; pinned deps with a lockfile, `npm ci && npm test` there; Node 22.13+, 25+ for the network block).
+  inside a Node permission-model sandbox, then the parent re-reads the SVG: root size, no external
+  references, every number shown is in the data; resvg to PNG; pinned deps with a lockfile,
+  `npm ci && npm test` there; Node 25+, CI on 26).
   `skills/lifecycle/` and `skills/paid/` are prose only: lifecycle sends through
   `send_batch.py` (channel `lifecycle_email`), paid gates spend through `gtm.py spend check|log`.
   Sending and spend authority (`authority`, `approve`, `outcome`, `spend`, `track`; levels draft,

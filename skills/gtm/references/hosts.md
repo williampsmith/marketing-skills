@@ -13,9 +13,9 @@ prompt everywhere:
 
 **Scheduled runs are unattended.** Set `MARKETING_UNATTENDED=1` in the environment of every
 scheduled run (cron, cloud routine, CI). A scheduler that can't set environment variables per job
-(Hermes cron) runs `gtm.py unattended start --hours 2 --by <job>` in a pre-run script instead, and the
-run ends with `gtm.py unattended end`; the marker in the state store has the same effect until it
-ends or expires. With it set, `gtm.py` refuses `approve` and `authority
+(Hermes cron) runs `gtm.py unattended start --hours 3 --by <job>` in a pre-run script instead; the
+marker in the state store has the same effect until it expires (there is no early end; starting again
+only extends it). With it set, `gtm.py` refuses `approve` and `authority
 grant`: approving a batch or granting authority is a human decision. A scheduled run that finds such
 a reply in the digest thread records it in `plan.md` as pending, verbatim. The human applies it in a
 short session where they are present: they run `/marketing:gtm` in Claude Code, or tell the Hermes

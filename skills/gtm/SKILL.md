@@ -70,8 +70,9 @@ An approval is a person's decision, relayed by you. Apply one only when all of t
 - **It is recorded with who and where**: `--quote "<their words, or ':white_check_mark: on <item>'>"
   --approver <platform>:<user id> --source <link to the message or reaction>`. When gtm.json lists
   `approvers` (`gtm.py approvers show`), `gtm.py` refuses anyone else; set the list up in init
-  whenever approvals arrive through chat (`gtm.py approvers add slack:U0123ABC --quote "<owner's
-  words>"`; once the list exists, only someone on it can add to it).
+  whenever approvals arrive through chat, starting with the owner (`gtm.py approvers add
+  slack:U0123ABC --quote "<owner's words>"`). Once the list exists, only someone on it can add or
+  remove one, it can't be emptied, and neither happens during a scheduled run.
 
 Apply exactly what was approved and nothing more, then log it in plan.md. "pause" from anyone in the
 team is applied at once (`gtm.py pause --reason "<their words>"`): stopping is never gated.

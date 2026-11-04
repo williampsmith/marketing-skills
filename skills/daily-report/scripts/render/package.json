@@ -3,7 +3,7 @@
   "private": true,
   "description": "Renders agent-written D3 charts to PNG: jsdom in a sandboxed Node process, resvg for the PNG.",
   "type": "module",
-  "engines": { "node": ">=22.13" },
+  "engines": { "node": ">=25" },
   "scripts": { "test": "node --test test/render.test.mjs" },
   "dependencies": {
     "@resvg/resvg-js": "2.6.2",

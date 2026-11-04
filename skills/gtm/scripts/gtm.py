@@ -1818,9 +1818,11 @@ def unattended_marker() -> dict | None:
         return None
     try:
         m = json.loads(p.read_text())
+        if not isinstance(m, dict):
+            raise ValueError("not an object")
         if dt.datetime.fromisoformat(m["expires"]) > dt.datetime.now(dt.timezone.utc):
             return m
-    except (ValueError, KeyError, TypeError):
+    except (ValueError, KeyError, TypeError, OSError):
         return {"expires": "unreadable marker: treated as a scheduled run until removed"}
     return None
 
@@ -1837,23 +1839,28 @@ def unattended_refusal(what: str) -> str | None:
 
 
 def cmd_unattended(a) -> int:
-    """Mark a scheduled run: `start` from the scheduler's pre-run script, `end` when the run finishes.
-    Ending early is logged, so a chat session that ends someone else's run shows up."""
+    """Mark a scheduled run, from the scheduler's pre-run script. The marker only expires: there is no
+    command to end it early, so a run can't lift its own restrictions through gtm.py. `start` during a
+    run extends it (never shortens). This is a guard against mistakes, not against an agent with a
+    shell that sets out to delete the file; see docs/hermes-slack.md."""
     p = R() / UNATTENDED_FILE
     if a.action == "start":
+        if not 0 < a.hours <= 12:
+            print("--hours must be between 0 and 12", file=sys.stderr)
+            return 1
         now = dt.datetime.now(dt.timezone.utc)
-        m = {"started": now.isoformat(timespec="seconds"),
-             "expires": (now + dt.timedelta(hours=a.hours)).isoformat(timespec="seconds"), "by": a.by}
+        expires = now + dt.timedelta(hours=a.hours)
+        cur = unattended_marker()
+        try:
+            if cur and dt.datetime.fromisoformat(cur["expires"]) > expires:
+                expires = dt.datetime.fromisoformat(cur["expires"])
+        except (ValueError, KeyError, TypeError):
+            pass
+        m = {"started": (cur or {}).get("started") or now.isoformat(timespec="seconds"),
+             "expires": expires.isoformat(timespec="seconds"), "by": a.by}
         atomic_write(p, json.dumps(m) + "\n")
-        append_jsonl(R() / "unattended.log", {"event": "start", **m})
+        append_jsonl(R() / "unattended.log", {"event": "start", "at": now.isoformat(timespec="seconds"), **m})
         print(json.dumps(m))
-        return 0
-    if a.action == "end":
-        m = unattended_marker()
-        p.unlink(missing_ok=True)
-        append_jsonl(R() / "unattended.log", {"event": "end", "at": dt.datetime.now(dt.timezone.utc).isoformat(
-            timespec="seconds"), "was": m, "by": a.by})
-        print("ended" if m else "no scheduled run was marked")
         return 0
     m = unattended_marker()
     print(json.dumps({"scheduled_run": bool(m or os.environ.get("MARKETING_UNATTENDED")),
@@ -1866,7 +1873,8 @@ def approval_provenance(s: dict, a, what: str) -> tuple[dict | None, str | None]
     approver must be one of them: the agent relays an approval, it can't be its source."""
     approver = (getattr(a, "approver", None) or "").strip()
     allowed = s.get("approvers") or []
-    if allowed and approver not in allowed:
+    # once a list has existed, an empty list means nobody may approve, never anybody
+    if (allowed or s.get("approvers_required")) and approver not in allowed:
         return None, (f"{what} needs --approver set to one of gtm.json approvers ({', '.join(allowed)}): "
                       "the person who approved, as the chat platform identifies them (e.g. slack:U0123ABC)")
     out = {}
@@ -1884,8 +1892,25 @@ def cmd_approvers(a) -> int:
     if a.action == "show":
         print(json.dumps(cur))
         return 0
-    if a.action == "remove":  # narrowing is always allowed, like lowering authority
+    if a.action == "remove":
+        why = unattended_refusal("removing an approver")
+        if why or not a.quote:
+            print(why or "--quote the human's instruction", file=sys.stderr)
+            return 1
+        if a.who not in cur:
+            print(f"{a.who} isn't an approver", file=sys.stderr)
+            return 1
+        if cur == [a.who]:
+            print("can't remove the last approver: add the new one first (an empty list would block every "
+                  "approval). To stop all activity, use `gtm.py pause`", file=sys.stderr)
+            return 1
+        prov, why = approval_provenance(s, a, "removing an approver")
+        if why:
+            print(why, file=sys.stderr)
+            return 1
         s["approvers"] = [x for x in cur if x != a.who]
+        s.setdefault("approver_log", []).append({"date": today().isoformat(), "removed": a.who, "quote": a.quote,
+                                                 **prov})
         save_state(s)
         print(json.dumps(s["approvers"]))
         return 0
@@ -1903,6 +1928,7 @@ def cmd_approvers(a) -> int:
     if a.who not in cur:
         cur.append(a.who)
     s["approvers"] = cur
+    s["approvers_required"] = True
     s.setdefault("approver_log", []).append({"date": today().isoformat(), "added": a.who, "quote": a.quote, **prov})
     save_state(s)
     print(json.dumps(cur))
@@ -2079,7 +2105,10 @@ def cmd_track(a) -> int:
         if why:
             print(why, file=sys.stderr)
             return 1
-        s["tracks"].setdefault(a.track, {"rungs": {}}).update(prov)
+        tr = s["tracks"].setdefault(a.track, {"rungs": {}})
+        for k in ("approver", "source"):
+            tr.pop(k, None)
+        tr.update(prov)
     s["tracks"].setdefault(a.track, {"rungs": {}})["enabled"] = a.state == "on"
     if a.quote:
         s["tracks"][a.track]["quote"] = a.quote
@@ -2406,8 +2435,9 @@ def main() -> int:
     p.add_argument("--approver", help="who approved, as platform:id (e.g. slack:U0123ABC); required when gtm.json lists approvers")
     p.add_argument("--source", help="where they approved: a link to the message or reaction")
     p = sub.add_parser("unattended", help="mark a scheduled run (for schedulers that can't set env vars)")
-    p.add_argument("action", choices=["start", "end", "status"])
-    p.add_argument("--hours", type=float, default=2.0, help="the marker expires after this long (default 2)")
+    p.add_argument("action", choices=["start", "status"])
+    p.add_argument("--hours", type=float, default=3.0,
+                   help="the marker expires after this long (default 3); start again to extend, never to shorten")
     p.add_argument("--by", default="", help="who marked it, e.g. hermes-cron:gtm-tick")
     p = sub.add_parser("job", help="turn a scheduled job on or off")
     p.add_argument("name")

@@ -11,7 +11,7 @@ funnel stage event. It then computes the derived numbers the analysis rests on, 
 however the agent words them:
 
 - each daily series in weeks: this week, the median of the weeks before, the change, a robust normal
-  band (median ± 3 × 1.4826 × MAD) and an exact Poisson test of this week against the earlier mean.
+  band (median ± 3 × 1.4826 × MAD, the MAD at least √median for counts) and an exact Poisson test of this week against the earlier mean.
   A week is only `unusual` when both say so; with fewer than 4 earlier weeks or an expected count
   under 5 the verdict is `too_little_data`, never a trend.
 - each funnel step's rate with a 95% Wilson interval and its floor.
@@ -92,6 +92,8 @@ def read_week(weeks: list[dict], counts: bool = True) -> dict:
         return out
     med = statistics.median(prior)
     mad = statistics.median(abs(x - med) for x in prior) * 1.4826
+    if counts:  # tied weeks give MAD 0; counts vary by at least about √n anyway
+        mad = max(mad, math.sqrt(med))
     mean = statistics.fmean(prior)
     out.update({"median_before": round(med, 4), "mean_before": round(mean, 4),
                 "change": round(cur - med, 4),
@@ -175,7 +177,7 @@ def actions(s: dict, since: dt.date) -> list[dict]:
     """What the operator did, dated, to annotate charts: work, launches, bets, news decisions, sends."""
     kinds = {name: j.get("kind") for name, j in s["jobs"].items()}
     out = []
-    for r in gtm.spend_rows():
+    for r in gtm.spend_rows():  # work recorded with a cost or a note (gtm.py record writes no row otherwise)
         if r.get("date", "") >= since.isoformat() and kinds.get(r.get("job")) == "improvement":
             out.append({"date": r["date"], "kind": "work", "label": r["job"], "note": r.get("note", "")})
     for b in gtm.bets():
@@ -184,10 +186,11 @@ def actions(s: dict, since: dt.date) -> list[dict]:
         if b.get("closed") and b["closed"] >= since.isoformat():
             out.append({"date": b["closed"], "kind": "bet_closed", "label": b["id"], "note": b.get("status", "")})
     launches = gtm.R() / "launches"
-    if launches.exists():
+    if launches.exists():  # the date a launch was prepared (its announcement is a draft until a human posts it)
         for f in sorted(launches.glob("*.md")):
             if f.name[:10] >= since.isoformat():
-                out.append({"date": f.name[:10], "kind": "launch", "label": f.stem[11:] or f.stem, "note": ""})
+                out.append({"date": f.name[:10], "kind": "launch_prepared", "label": f.stem[11:] or f.stem,
+                            "note": ""})
     for c in gtm.read_jsonl(gtm.R() / "news" / "candidates.jsonl"):
         if c.get("status") in ("refresh", "react", "pitch") and (c.get("decided") or "") >= since.isoformat():
             out.append({"date": c["decided"], "kind": f"news_{c['status']}", "label": c.get("title", "")[:80],
@@ -198,13 +201,19 @@ def actions(s: dict, since: dt.date) -> list[dict]:
     return sorted(out, key=lambda x: x["date"])
 
 
+STALE_DAYS = 30  # a batch nobody answered in a month is dropped from the asks, not asked forever
+
+
 def needs_human() -> list[dict]:
-    """Drafted send batches nobody has approved yet: one Slack message each."""
+    """Drafted send batches nobody has approved yet, drafted in the last 30 days: one message each."""
     out = []
     sends = gtm.R() / "sends"
     if not sends.exists():
         return out
+    cutoff = dt.datetime.now().timestamp() - STALE_DAYS * 86400
     for d in sorted(p for p in sends.iterdir() if p.is_dir()):
+        if not (d / "drafts.jsonl").exists() or (d / "drafts.jsonl").stat().st_mtime < cutoff:
+            continue
         drafts = gtm.read_jsonl(d / "drafts.jsonl")
         if drafts and not gtm.approved_hashes(d.name):
             out.append({"kind": "approve_batch", "batch": d.name, "drafts": len(drafts),
@@ -248,7 +257,9 @@ def build(days: int = DAYS, offline: bool = False, end: dt.date | None = None) -
         base = by_id.get(st.get("from") or "")
         if st.get("rate") is not None and base and base.get("count"):
             row["interval"] = wilson(st["count"], base["count"])
-            if row["interval"] and st.get("floor") is not None:
+            if not st.get("enough_data"):  # gtm.py calls this step too small to judge; so does the report
+                row["vs_floor"] = "too_little_data"
+            elif row["interval"] and st.get("floor") is not None:
                 lo, hi = row["interval"]
                 row["vs_floor"] = "below" if hi < st["floor"] else "above" if lo > st["floor"] else "unclear"
         steps.append(row)

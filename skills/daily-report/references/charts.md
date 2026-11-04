@@ -15,10 +15,13 @@ export default function draw({ d3, svg, data, opts, theme, width, height, helper
 }
 ```
 
-It may not `import`, `require`, use `process`, `fetch`, `window`, `document`, `eval`, `Function` or
-`constructor`; the lint rejects those before anything runs. It then runs in a Node process that can
-read only the renderer, the chart and the data, and can't write, start processes or (Node 25+) use
-the network.
+Don't `import`, `require`, or use `process`, `fetch`, `window`, `document`, `eval`, `Function` or
+`constructor`; a lint flags those, as a guard against mistakes. The fence is elsewhere: the chart runs
+in a Node process that can read only the renderer, the chart and the data, and can't write, start
+processes or use the network (Node 25+), with the network objects removed from its window. The
+parent then checks the SVG it gets back: the root keeps its size, nothing references a file or URL
+outside the document (no `<image href>` to a path; embed a `data:image/png;base64,…` if you must),
+and the numbers come from the data.
 
 ## What makes a good report chart
 
@@ -43,8 +46,11 @@ the network.
 ## The number check
 
 After drawing, the renderer reads every visible text outside axis ticks and checks each number in it
-against the numbers in data.json, as written or as a percentage, at the precision shown (`7.0%`
-matches 0.0701; `1.2k` matches 1204). Dates are ignored. A fixed label with a number in it
+against the numbers in data.json, as written or (for a `%`) as a percentage, at the precision shown
+(`7.0%` matches 0.0701; `1.2k` matches 1204). A sign you show must match the data's sign (`-51` is
+not 51); an unsigned number may stand for either ("down 12%"). Dates written with month names or as
+YYYY-MM-DD are ignored. The raw daily `series` don't count as a source (with 84 values per stage,
+almost any small number would match): label values from `readings`, `funnel`, `bets` or `spend`. A fixed label with a number in it
 ("95% interval") goes in an element with `data-number="label"`, or pass `fixedSubtitle: true` to
 `helpers.header`. `--allow-unsourced` renders anyway and lists what didn't match; use it only for a
 number you computed in the chart from shown values (a sum of two bars), and say so in the message.

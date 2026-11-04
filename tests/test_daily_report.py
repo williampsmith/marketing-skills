@@ -50,6 +50,10 @@ class StatsTest(unittest.TestCase):
         self.assertEqual(r["verdict"], "too_little_data")
         self.assertIn("noise", r["why"])
 
+    def test_tied_weeks_at_large_counts_are_not_called_unusual(self):
+        weeks = [{"value": v} for v in (200, 200, 200, 260, 150, 240)]
+        self.assertEqual(rd.read_week(weeks)["verdict"], "normal")
+
     def test_too_few_weeks(self):
         weeks = rd.weekly(daily([9] * 21), dt.date(2026, 11, 2))
         self.assertEqual(rd.read_week(weeks)["verdict"], "too_little_data")
@@ -80,9 +84,19 @@ class BuildTest(StoreCase):
         self.assertIn("focus", data)
         signup = next(s for s in data["funnel"]["steps"] if s["id"] == "signup")
         self.assertEqual(len(signup["interval"]), 2)
+        self.assertTrue(signup["enough_data"])
         self.assertIn(signup["vs_floor"], ("below", "above", "unclear"))
+
         code, text = self.run_cli("show")
         self.assertEqual(code, 0)
+
+    def test_a_step_too_small_to_judge_gets_no_floor_verdict(self):
+        gtm.metric_add("stage:visit", 15, source="posthog")
+        gtm.metric_add("stage:signup", 0, source="posthog")
+        data = rd.build(offline=True)
+        signup = next(s for s in data["funnel"]["steps"] if s["id"] == "signup")
+        self.assertEqual(signup["vs_floor"], "too_little_data")
+        self.assertFalse(any("signup" in line and "floor" in line for line in rd.headline(data)))
 
     def test_posthog_not_connected_is_a_note_not_a_failure(self):
         out = self.json_cli("build")
@@ -132,8 +146,30 @@ class ProvenanceTest(StoreCase):
         self.assertEqual(self.run_cli("approvers", "add", "slack:U9", "--quote", "add me")[0], 1)
         self.assertEqual(self.run_cli("approvers", "add", "slack:U9", "--quote", "add U9", "--approver", "slack:U1")[0], 0)
         self.assertEqual(json.loads(self.run_cli("approvers", "show")[1]), ["slack:U1", "slack:U9"])
-        self.assertEqual(self.run_cli("approvers", "remove", "slack:U9")[0], 0)  # narrowing needs no one
+        self.assertEqual(self.run_cli("approvers", "remove", "slack:U9")[0], 1)  # needs a quote and an approver
+        self.assertEqual(self.run_cli("approvers", "remove", "slack:U9", "--quote", "drop U9",
+                                      "--approver", "slack:U1")[0], 0, self.last_err)
         self.assertEqual(self.run_cli("approvers", "add", "nope", "--quote", "x", "--approver", "slack:U1")[0], 1)
+        log = gtm.load_state()["approver_log"]
+        self.assertEqual([("added" in r, "removed" in r) for r in log], [(True, False), (True, False), (False, True)])
+
+    def test_the_list_can_never_be_emptied_into_no_check(self):
+        self.run_cli("approvers", "add", "slack:U1", "--quote", "me")
+        code, _ = self.run_cli("approvers", "remove", "slack:U1", "--quote", "drop", "--approver", "slack:U1")
+        self.assertEqual(code, 1)
+        self.assertIn("last approver", self.last_err)
+        # even an emptied list (edited by hand) blocks approvals rather than opening them
+        s = gtm.load_state()
+        s["approvers"] = []
+        gtm.save_state(s)
+        self.assertEqual(self.run_cli("approve", "b1", "--count", "1", "--quote", "ok")[0], 1)
+        self.assertEqual(self.run_cli("approvers", "add", "slack:EVIL", "--quote", "x")[0], 1)
+
+    def test_removing_an_approver_is_refused_in_a_scheduled_run(self):
+        self.run_cli("approvers", "add", "slack:U1", "--quote", "me")
+        self.run_cli("approvers", "add", "slack:U2", "--quote", "add", "--approver", "slack:U1")
+        self.run_cli("unattended", "start")
+        self.assertEqual(self.run_cli("approvers", "remove", "slack:U2", "--quote", "x", "--approver", "slack:U1")[0], 1)
 
     def test_adding_an_approver_is_refused_unattended(self):
         os.environ["MARKETING_UNATTENDED"] = "1"
@@ -154,22 +190,33 @@ class ProvenanceTest(StoreCase):
         self.assertEqual(self.run_cli("authority", "grant", "outbound", "--level", "draft")[0], 0)  # lowering: anyone
         self.assertNotIn("approver", gtm.load_state()["authority"]["outbound"])
         self.assertEqual(self.run_cli("track", "paid", "on", "--quote", "go")[0], 1)
-        self.assertEqual(self.run_cli("track", "paid", "on", "--quote", "go", "--approver", "slack:U1")[0], 0)
+        self.assertEqual(self.run_cli("track", "paid", "on", "--quote", "go", "--approver", "slack:U1",
+                                      "--source", "https://x/1")[0], 0)
+        self.run_cli("track", "paid", "on", "--quote", "again", "--approver", "slack:U1")
+        self.assertNotIn("source", gtm.load_state()["tracks"]["paid"])  # no stale link from the last approval
 
-    def test_a_scheduled_run_marker_refuses_approvals_until_it_ends_or_expires(self):
+    def test_a_scheduled_run_marker_refuses_approvals_until_it_expires(self):
         self.assertEqual(self.run_cli("unattended", "start", "--by", "hermes-cron:test")[0], 0)
         code, _ = self.run_cli("approve", "b1", "--count", "1", "--quote", "ok")
         self.assertEqual(code, 1)
         self.assertIn("scheduled run is in progress", self.last_err)
         self.assertTrue(json.loads(self.run_cli("unattended", "status")[1])["scheduled_run"])
-        self.assertEqual(self.run_cli("unattended", "end", "--by", "test")[0], 0)
-        self.assertEqual(self.run_cli("approve", "b1", "--count", "1", "--quote", "ok")[0], 0, self.last_err)
+        self.assertNotEqual(self.run_cli("unattended", "end")[0], 0)  # no early end through gtm.py
+        first = json.loads((gtm.R() / "UNATTENDED").read_text())["expires"]
+        self.run_cli("unattended", "start", "--hours", "0.5")  # a shorter start never shortens the run
+        self.assertEqual(json.loads((gtm.R() / "UNATTENDED").read_text())["expires"], first)
+        self.assertEqual(self.run_cli("unattended", "start", "--hours", "13")[0], 1)
         log = gtm.read_jsonl(gtm.R() / "unattended.log")
-        self.assertEqual([r["event"] for r in log], ["start", "end"])
+        self.assertEqual([r["event"] for r in log], ["start", "start"])
         # an expired marker doesn't count; an unreadable one does
         (gtm.R() / "UNATTENDED").write_text(json.dumps({"expires": "2000-01-01T00:00:00+00:00"}))
         self.assertIsNone(gtm.unattended_refusal("x"))
-        (gtm.R() / "UNATTENDED").write_text("garbage")
+        self.assertEqual(self.run_cli("approve", "b1", "--count", "1", "--quote", "ok")[0], 0, self.last_err)
+        for bad in ("garbage", "[]", json.dumps({"expires": "2999-01-01T00:00:00"})):  # naive time counts too
+            (gtm.R() / "UNATTENDED").write_text(bad)
+            self.assertIsNotNone(gtm.unattended_refusal("x"), bad)
+        (gtm.R() / "UNATTENDED").unlink()
+        (gtm.R() / "UNATTENDED").mkdir()
         self.assertIsNotNone(gtm.unattended_refusal("x"))
 
     def test_daily_report_is_off_until_turned_on(self):

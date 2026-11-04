@@ -56,8 +56,8 @@ answers in context. Leave it at the default (`true`) if people should get separa
 
 ## 4. The renderer (charts)
 
-On the Hermes host, once: Node 22.13 or later (25+ also cuts the chart code off from the network),
-then `npm ci` in `skills/daily-report/scripts/render/`. Install a font package if the image has
+On the Hermes host, once: Node 26 (LTS; 25+ works) so the chart code is cut off from the network
+(the renderer refuses older Node unless told to accept an open network), then `npm ci` in `skills/daily-report/scripts/render/`. Install a font package if the image has
 none (`apt-get install -y fonts-dejavu-core`, or `fonts-inter`). Render the starter chart once and look
 at it before relying on it:
 
@@ -78,20 +78,21 @@ profile (⋯ → Copy member ID).
 ## 6. The daily job
 
 Hermes cron jobs can't set environment variables per job, so the scheduled run is marked another
-way: a pre-run script writes a marker in the state store that expires after two hours, and `gtm.py`
-refuses human-only decisions while it's there. Chat sessions outside that window are attended as
-usual.
+way: a pre-run script writes a marker in the state store that expires after three hours, and
+`gtm.py` refuses human-only decisions while it's there. There is no command to end it early, so
+approvals made in chat during that window wait until it expires (`gtm.py unattended status` shows
+when). The run re-arms it before long steps, which only ever extends it.
 
 `~/.hermes/scripts/gtm-mark-run.sh`:
 
 ```sh
 #!/bin/sh
-cd /srv/product && python3 /srv/marketing-skills/skills/gtm/scripts/gtm.py unattended start --hours 2 --by hermes-cron:gtm-tick >/dev/null
+cd /srv/product && python3 /srv/marketing-skills/skills/gtm/scripts/gtm.py unattended start --hours 3 --by hermes-cron:gtm-tick >/dev/null
 ```
 
 ```sh
 hermes cron create "0 8 * * *" \
-  "Scheduled run: run the gtm skill in tick mode for this repo, including the daily report. This run is unattended: prefix every gtm.py, news_watch.py and send_batch.py command with MARKETING_UNATTENDED=1. Finish with gtm.py unattended end --by hermes-cron:gtm-tick." \
+  "Scheduled run: run the gtm skill in tick mode for this repo, including the daily report. This run is unattended: prefix every gtm.py, news_watch.py and send_batch.py command with MARKETING_UNATTENDED=1, and run gtm.py unattended start --by hermes-cron:gtm-tick before the work session and before the daily report." \
   --name gtm-tick --skill gtm --skill daily-report --workdir /srv/product \
   --script gtm-mark-run.sh --deliver slack:C0GROWTH --timezone Europe/London
 ```
@@ -104,10 +105,17 @@ Add `--provider … --model …` (or `--pin`) to fix the model the job runs on. 
 | guard | enforced by |
 |---|---|
 | who can talk to the bot, and where | Hermes: `SLACK_ALLOWED_USERS`, `SLACK_ALLOWED_CHANNELS`, `allow_bots: none` |
-| a scheduled run can't approve batches, grant authority, turn on paid or add approvers | `gtm.py`: the run marker (script, before the agent starts) and `MARKETING_UNATTENDED` |
-| an approval names who gave it and where | `gtm.py`: with `approvers` set, `approve`, `authority grant` and `track paid on` refuse an `--approver` not on the list, and store it with `--source` |
-| an approval came from that person's reaction or reply, not from text the agent read | **the model**, following gtm's Approvals rules. Hermes reports who reacted or wrote; nothing outside the model checks that the `--approver` it passes matches that event. Keep the approvers list short, and read `<state>/approvals.jsonl` now and then |
+| a scheduled run can't approve batches, grant authority, turn on paid, or add or remove approvers | `gtm.py`, through the run marker the pre-run script writes before the agent starts (and `MARKETING_UNATTENDED` when the prompt is followed). This stops mistakes. It doesn't stop a manipulated agent: the agent has a shell and can edit the state store, including deleting the marker or writing `approvals.jsonl` itself |
+| an approval names who gave it and where | `gtm.py`: once an approvers list exists, `approve`, `authority grant` and `track paid on` refuse an `--approver` not on it and store it with `--source`; the list can't be emptied, and only an approver can add or remove one. The first approver is whoever the person present names: add the owner yourself at init |
+| an approval came from that person's reaction or reply, not from text the agent read | **the model**, following gtm's Approvals rules. Hermes reports who reacted or wrote; nothing outside the model checks that the `--approver` it passes matches that event |
+| a sensitive news story becomes a reaction or pitch only with a human's yes | `news_watch.py` (refused during a scheduled run; quoted, but without `--approver`) |
+| chart code can't read other files, write, start processes or reach the network, and a chart can't show an invented number or embed a local file | the renderer: Node's permission sandbox (Node 25+ for the network), checks on the returned SVG in the parent process, and the number check |
 | sends stay within caps, suppression and pinned content | `send_batch.py`, regardless of who approved |
+
+Because the gates in `gtm.py` stop mistakes rather than a determined agent, the boundary that
+matters is what the agent can reach: keep the approvers list short, give the bot's GitHub token and
+SMTP inbox only the scopes the skills need, keep send caps low, and read `<state>/approvals.jsonl`
+and `unattended.log` now and then.
 
 ## Using it
 

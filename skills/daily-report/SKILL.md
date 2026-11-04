@@ -17,8 +17,8 @@ from the product repo root, by absolute path.
 
 - `<state>/gtm.json` (gtm init). PostHog connected for daily series (`../measurement`); without it
   the report uses the store's metrics only, and says so.
-- For charts: Node 22.13 or later (25+ also blocks the chart code from the network) and, once per
-  install, `npm ci` in `scripts/render/`. Fonts: the host's system fonts, or put `.ttf`/`.otf` files
+- For charts: Node 26 (LTS; 25+ works), which lets the renderer cut chart code off from the network,
+  and, once per install, `npm ci` in `scripts/render/`. Fonts: the host's system fonts, or put `.ttf`/`.otf` files
   in `scripts/render/fonts/` or `$RENDER_FONT_DIR` (a bare Docker image often has none, and text
   then renders as nothing: look at the first PNG). Without Node, post the report without charts and
   say why once.
