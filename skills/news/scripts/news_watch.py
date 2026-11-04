@@ -536,7 +536,7 @@ def cmd_decide(a) -> int:
                 print(f"too late to {a.decision} (window closed {by}); a page refresh still works", file=sys.stderr)
                 return 1
             if c.get("sensitive"):
-                if os.environ.get("MARKETING_UNATTENDED"):
+                if gtm.unattended_refusal("a sensitive story"):
                     print("a sensitive story can't be used for a reaction or pitch in an unattended run; "
                           "queue it for a human or use it as a refresh that explains the mechanism", file=sys.stderr)
                     return 1

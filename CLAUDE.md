@@ -12,7 +12,10 @@ the loop and `docs/design/growth-operator.md` for the design being implemented.
   then `~/.marketing/<owner>-<repo>/`). Every script gets its paths from `state_root()`.
 - `skills/gtm/scripts/gtm.py`: the state engine. `where`, `init`, `tick`, `status`, `focus`, `fit`,
   `tracks`/`ladder`, `next`, `budget`, `record`, `may`, `metric`, `bet`, `learnings`, `pause`/`resume`,
-  `digest`, `store use`, `sync pull|push`, `migrate`. The gtm skill must ask it rather than reason
+  `digest`, `store use`, `sync pull|push`, `migrate`, `job` (turn a job on/off), `approvers` (who may
+  approve; `approve`, `authority grant` and `track paid on` take `--approver`/`--source`),
+  `unattended start|end|status` (a scheduled-run marker for schedulers without per-job env vars;
+  `unattended_refusal` honours it and `MARKETING_UNATTENDED`). The gtm skill must ask it rather than reason
   about dates, money, fit, focus or experiment results.
 - `skills/gtm/references/`: `channel-fit.json` (channel × motion matrix, cost floors, tactics; read by
   `gtm.py`) and `channel-fit.md`, `funnel-templates.json` (stages and floors per motion),
@@ -40,6 +43,12 @@ the loop and `docs/design/growth-operator.md` for the design being implemented.
   `skills/news/scripts/news_watch.py` (current-events sweep through treg plus optional CourtListener:
   dedupe, deterministic scoring, shelf lives, sensitive-story gate; `tests/test_news.py` replaces
   `run_treg` and `http_get_json` and must stay offline).
+  `skills/daily-report/scripts/report_data.py` (the report's dataset: store metrics, PostHog daily
+  series, weekly readings with a robust band and an exact Poisson test, Wilson intervals on funnel
+  steps, actions, items waiting on a human; `tests/test_daily_report.py`) and
+  `skills/daily-report/scripts/render/` (the **only Node code**: agent-written D3 charts run in jsdom
+  inside a Node permission-model sandbox, a check that every number shown is in the data, resvg to
+  PNG; pinned deps with a lockfile, `npm ci && npm test` there; Node 22.13+, 25+ for the network block).
   `skills/lifecycle/` and `skills/paid/` are prose only: lifecycle sends through
   `send_batch.py` (channel `lifecycle_email`), paid gates spend through `gtm.py spend check|log`.
   Sending and spend authority (`authority`, `approve`, `outcome`, `spend`, `track`; levels draft,
@@ -48,7 +57,7 @@ the loop and `docs/design/growth-operator.md` for the design being implemented.
   by hash at grant; spend gated on the resulting daily budget) lives in gtm.py and is tested in
   `tests/test_sending.py` and `tests/test_authority.py`.
   All Python is **stdlib only** and runs with plain `python3` (3.9+), since it executes inside
-  other people's repos.
+  other people's repos. Node is optional: only the chart renderer needs it, and the report works without charts.
 - `tests/`: `python3 -m unittest discover tests`. Run after any script change. Tests that touch
   state subclass `tests/helpers.py` `StoreCase`, which points `MARKETING_HOME` at a temp dir so
   nothing writes to the real home directory.
@@ -56,7 +65,7 @@ the loop and `docs/design/growth-operator.md` for the design being implemented.
   the free graders (`tool_used`, `regex`, `file_exists`); `llm` graders cost judge calls.
 - CI: `.github/workflows/checks.yml` (PRs and pushes to main) compiles the scripts and runs the tests
   on Python 3.9 and latest, checks that every JSON parses, runs `claude plugin validate` (pinned CLI
-  version), checks that each skill folder matches its frontmatter `name`, and checks that both
+  version), runs the renderer's node tests, checks that each skill folder matches its frontmatter `name`, and checks that both
   manifests carry the same version. `.github/workflows/evals.yml` runs the evals and is
   **manual-dispatch only**, because each run spends model credit; it needs an `ANTHROPIC_API_KEY`
   secret and caps cost with `--max-cost-usd`.
@@ -68,7 +77,8 @@ the loop and `docs/design/growth-operator.md` for the design being implemented.
   `posthog-outbox.jsonl`, `plan.md`, `digests/`, `access/`, `watch/`, `watch.json`, `outreach/`,
   `competitors/`, `entity/`, `launches/`, `seo/`, `research/`, `outbound/accounts/`,
   `sends/<batch>/`, `sends.jsonl`, `approvals.jsonl`, `outcomes.jsonl`, `ad-spend.jsonl`,
-  `suppression.csv`, `lifecycle/<flow>/`, `paid/`, `creative/<batch>/`, `social/`, `news.json`, `news/`. Keep those names stable across skills. Scripts resolve the
+  `suppression.csv`, `lifecycle/<flow>/`, `paid/`, `creative/<batch>/`, `social/`, `news.json`, `news/`, `reports/daily/<date>/`, `reports/charts/`,
+  `UNATTENDED`, `unattended.log`. Keep those names stable across skills. Scripts resolve the
   directory through `marketing_state.state_root()`; skill prose writes `<state>/…`. The product repo
   only receives PRs.
 - treg: skills describe jobs and give **dated example** endpoint ids, always with "verify with

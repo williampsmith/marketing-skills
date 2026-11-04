@@ -50,9 +50,9 @@ flowchart TD
     D --> E["Metrics and audit scores<br/>written to the state store"]
     D --> F
     F["Outputs<br/>PRs for pages and site changes<br/>drafts for outreach, posts, pitches and profiles"]
-    D --> G["Digest in the state store<br/>'Needs you' list sent to chat or GitHub"]
+    D --> G["Digest in the state store, daily report with charts<br/>'Needs you' items sent to chat (one each) or GitHub"]
     F --> G
-    G --> H["Human merges PRs,<br/>sends drafts, approves proposals"]
+    G --> H["Human merges PRs, sends drafts,<br/>approves with a reaction or reply,<br/>asks the operator questions in chat"]
     E -.->|"bets close against the metrics"| C
 ```
 
@@ -83,6 +83,7 @@ into which tactics get tried next. A result becomes a learning only after a huma
 | `lifecycle` | Onboarding, trial, dunning, a fair cancel flow, win-back, referrals and review requests, as templates, PRs or drafts for the email platform; judged against holdouts | free |
 | `paid` | Off until a human turns it on. Read-only audits (tracking, waste, structure, payback), competitor ad research, proposals; budget changes only under granted caps | free audits; ~$0.01 per competitor ad lookup |
 | `social` | Organic posts and community answers drafted from launches, pages, bets and news, for a human to post | free |
+| `daily-report` | A daily report for a team chat channel: what moved and whether it's more than noise, what shipped, charts drawn in D3 for the day's finding, PostHog links, and one message per approval to react to; also answers "how are we doing" with a chart. Slack via Hermes: [docs/hermes-slack.md](docs/hermes-slack.md) | free (PostHog queries) |
 | `news` | Watches current events in the category (news, Google News, Hacker News, X, optionally court filings) through treg, scores and queues stories, and turns the good ones into page refreshes, timely posts or press pitches | ~$0.01-0.05 per sweep |
 
 ### Where the data lives

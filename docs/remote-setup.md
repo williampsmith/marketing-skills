@@ -38,8 +38,8 @@ words>"`. Until then every channel is drafts only, and even after it the agent s
 batches a human approved (`gtm.py approve <batch> --count N --quote "<your reply>"`, pinned to the
 drafts' content).
 
-Every scheduled run sets `MARKETING_UNATTENDED=1` in its environment, and `gtm.py` then refuses
-approvals and grants. A scheduled run that receives one records it in `plan.md` as pending; it is
+Every scheduled run sets `MARKETING_UNATTENDED=1` in its environment (or, on Hermes, marks itself
+with `gtm.py unattended start` from a pre-run script), and `gtm.py` then refuses approvals and grants. A scheduled run that receives one records it in `plan.md` as pending; it is
 applied in the next human-present session (you run `/marketing:gtm`, or tell the Hermes agent in
 chat), with your words quoted.
 
@@ -90,15 +90,16 @@ go through PRs, and its own bookkeeping goes to the state store.
    directory, keeping the folders side by side. Updating is `git pull`.
 3. **Product repo**: clone it where the agent can work in it, with the bot's GitHub token.
 4. **Messaging**: connect the gateway (Telegram, Slack, …) and set `notify.channel: "gateway"`
-   during init. The digest's "Needs you" list arrives in chat. Approvals and grants you reply with in
-   chat are applied in that chat turn with your words quoted; other replies are applied on the next
-   tick.
+   during init. The digest's "Needs you" list arrives in chat, and replies are applied under gtm's
+   Approvals rules. For Slack (a channel with a daily report and charts, approvals by reaction, and
+   @mentions to ask the operator anything), follow [hermes-slack.md](hermes-slack.md).
 5. **Init in chat**: tell the agent to run the `gtm` skill in init mode for the repo. Answer its
    questions (stage, sales motion, deal size, goal, notify channel) and confirm the product context,
    claims and panel it drafts.
-6. **Heartbeat**: ask the agent to schedule one daily job that runs `gtm` in tick mode for that
-   repo (prompt in `hosts.md`), with `MARKETING_UNATTENDED=1` in the job's environment. One job
-   only; `gtm` decides what's due.
+6. **Heartbeat**: one daily cron job that runs `gtm` in tick mode for that repo. Hermes cron jobs
+   can't set environment variables, so mark the run with a pre-run script that calls `gtm.py
+   unattended start` (see [hermes-slack.md](hermes-slack.md), section 6). One job only; `gtm`
+   decides what's due.
 7. **Optional hardening**: run the free access check from CI as well (`hosts.md`), so a model or
    server outage can't hide your site becoming invisible to AI bots.
 

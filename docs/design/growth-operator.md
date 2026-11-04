@@ -499,6 +499,7 @@ anomalies, and named enterprise accounts.
 | lifecycle | new | email flows, churn and cancel flows, referrals |
 | paid | new | read-only audits first, then capped changes |
 | news | new (0.9) | current events in the category: a scored queue feeding page refreshes, timely posts and press pitches |
+| daily-report | new (0.10) | the daily report in a chat channel, D3 charts from a computed dataset, approvals by reaction, and gtm's `ask` mode for questions in chat |
 
 ## 13. Phases
 
@@ -513,6 +514,7 @@ run in CI against a fixture repo.
 | 4 · conversion | 0.7 | `cro`, `activation`, `experiments` with PostHog flags | an A/B test runs end to end as a PR plus flag |
 | 5 · send and spend | 0.8+ | `lifecycle`, `paid`, bounded authority | a capped send and a capped budget change run with the kill switch tested |
 | 6 · news | 0.9 | `news`: a treg-based sweep (news, Google News, Hacker News, X; CourtListener optional), `news_watch` and `news_act` jobs, shelf lives, sensitive-story rule | a sweep queues a fresh story once, a stale reaction is refused, and a sensitive story can't become a post unattended |
+| 7 · chat | 0.10 | `daily-report` (data layer, sandboxed D3 renderer with a number check), gtm `ask` mode and mode choice, approvals with approver and source, `approvers`, the scheduled-run marker, the Hermes + Slack guide | a question in chat doesn't tick; a chart showing a number not in the data fails; an approval from someone off the list is refused; a marked scheduled run can't approve |
 
 ## 14. Migration from 0.3
 
